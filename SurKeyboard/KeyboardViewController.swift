@@ -227,9 +227,17 @@ class KeyboardViewController: UIInputViewController {
     
     // MARK: - Setup
     private func setupKeyboardView() {
+        // Set a fixed height for the keyboard to ensure all elements are visible
+        let keyboardHeight: CGFloat = 260
+        
         keyboardView = UIView()
         keyboardView.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(keyboardView)
+        
+        // Set the input view height with high priority
+        let heightConstraint = view.heightAnchor.constraint(equalToConstant: keyboardHeight)
+        heightConstraint.priority = .defaultHigh
+        heightConstraint.isActive = true
         
         NSLayoutConstraint.activate([
             keyboardView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
@@ -349,9 +357,9 @@ class KeyboardViewController: UIInputViewController {
         bottomStack.translatesAutoresizingMaskIntoConstraints = false
         keyboardView.addSubview(bottomStack)
         
-        // "123" button (switches to numbers mode)
+        // "? ABC" button (switches to numbers mode)
         let modeKey = createSpecialKey(type: .numbers, width: 50)
-        modeKey.setTitle("123", for: .normal)
+        modeKey.setTitle("? ABC", for: .normal)
         modeKey.titleLabel?.font = UIFont.systemFont(ofSize: 14, weight: .medium)
         bottomStack.addArrangedSubview(modeKey)
         keyButtons.append(modeKey)
@@ -566,8 +574,8 @@ class KeyboardViewController: UIInputViewController {
             break
             
         case .emoji:
-            // Could open emoji keyboard or switch to emoji mode
-            break
+            // Switch to emoji keyboard using the next keyboard functionality
+            advanceToNextInputMode()
             
         case .microphone:
             // Microphone functionality - requires additional permissions
@@ -612,14 +620,15 @@ class KeyboardViewController: UIInputViewController {
                 case .off:
                     button.setImage(UIImage(systemName: "shift"), for: .normal)
                     button.backgroundColor = isDarkMode ? UIColor(white: 0.35, alpha: 1.0) : UIColor(white: 0.85, alpha: 1.0)
+                    button.tintColor = isDarkMode ? .white : .black
                 case .on:
                     button.setImage(UIImage(systemName: "shift.fill"), for: .normal)
-                    button.backgroundColor = isDarkMode ? .white : .black
-                    button.tintColor = isDarkMode ? .black : .white
+                    button.backgroundColor = .white
+                    button.tintColor = .black
                 case .capsLock:
                     button.setImage(UIImage(systemName: "capslock.fill"), for: .normal)
-                    button.backgroundColor = isDarkMode ? .white : .black
-                    button.tintColor = isDarkMode ? .black : .white
+                    button.backgroundColor = .white
+                    button.tintColor = .black
                 }
             }
         }
@@ -754,7 +763,7 @@ class KeyboardViewController: UIInputViewController {
         
         // Mode switch key
         let modeKey = createSpecialKey(type: .numbers, width: 50)
-        modeKey.setTitle(mode == .letters ? "123" : "ABC", for: .normal)
+        modeKey.setTitle(mode == .letters ? "? ABC" : "ABC", for: .normal)
         modeKey.titleLabel?.font = UIFont.systemFont(ofSize: 14, weight: .medium)
         bottomStack.addArrangedSubview(modeKey)
         keyButtons.append(modeKey)
@@ -831,11 +840,15 @@ class KeyboardViewController: UIInputViewController {
             case .character:
                 button.backgroundColor = keyBackgroundColor
             case .shift:
+                // Handle shift colors based on state
                 if shiftState == .off {
                     button.backgroundColor = specialKeyBackgroundColor
                     button.tintColor = textColor
+                } else {
+                    // For on/capsLock state, use white background with black icon
+                    button.backgroundColor = .white
+                    button.tintColor = .black
                 }
-                // Keep existing colors for on/capsLock state
             case .delete, .numbers, .symbols:
                 button.backgroundColor = specialKeyBackgroundColor
             case .space:
