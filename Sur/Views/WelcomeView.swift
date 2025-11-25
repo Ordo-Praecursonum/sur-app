@@ -99,9 +99,11 @@ struct WelcomeView: View {
             .background(Color(.systemBackground))
             .navigationDestination(isPresented: $showCreateWallet) {
                 CreateWalletView()
+                    .environmentObject(authManager)
             }
             .navigationDestination(isPresented: $showImportWallet) {
                 ImportWalletView()
+                    .environmentObject(authManager)
             }
         }
     }

@@ -288,7 +288,7 @@ final class AuthenticationManager: ObservableObject {
     /// Clear any error state
     func clearError() {
         errorMessage = nil
-        if state == .error {
+        if case .error = state {
             state = hasWallet ? .locked : .unauthenticated
         }
     }
