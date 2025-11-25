@@ -46,11 +46,22 @@ final class AuthenticationManager: ObservableObject {
     /// Whether the user has an existing wallet
     @Published private(set) var hasWallet: Bool = false
     
-    /// Current user's Ethereum address (if authenticated)
+    /// Current user's address for the selected network
     @Published private(set) var publicAddress: String?
     
     /// Short version of the public address for display
     @Published private(set) var shortAddress: String?
+    
+    /// Currently selected blockchain network
+    @Published var selectedNetwork: BlockchainNetwork = .ethereum {
+        didSet {
+            BlockchainNetwork.saveSelected(selectedNetwork)
+            updateAddressForNetwork()
+        }
+    }
+    
+    /// Addresses for all supported networks (cached)
+    @Published private(set) var networkAddresses: [BlockchainNetwork: String] = [:]
     
     /// Whether biometric authentication is enabled
     @Published private(set) var isBiometricEnabled: Bool = false
@@ -74,6 +85,7 @@ final class AuthenticationManager: ObservableObject {
     // MARK: - Initialization
     
     private init() {
+        selectedNetwork = BlockchainNetwork.loadSelected()
         checkInitialState()
     }
     
@@ -85,11 +97,8 @@ final class AuthenticationManager: ObservableObject {
         isBiometricEnabled = secureStorage.isBiometricEnabled()
         
         if hasWallet {
-            // Load public address (non-sensitive data)
-            if let address = try? secureStorage.getPublicAddress() {
-                publicAddress = address
-                shortAddress = EthereumKeyManager.shortenAddress(address)
-            }
+            // Load cached addresses if available
+            loadCachedAddresses()
             state = .locked
         } else {
             state = .unauthenticated
@@ -109,20 +118,28 @@ final class AuthenticationManager: ObservableObject {
             // Generate new mnemonic
             let mnemonic = try MnemonicGenerator.generateMnemonic(wordCount: 12)
             
-            // Derive keys from mnemonic
-            let (privateKey, address) = try EthereumKeyManager.generateKeysFromMnemonic(mnemonic)
+            // Generate addresses for all networks
+            let addresses = try MultiChainKeyManager.generateAllAddresses(from: mnemonic)
+            networkAddresses = addresses
+            
+            // Get the private key for the default network (Ethereum)
+            let (privateKey, _) = try MultiChainKeyManager.generateKeysForNetwork(mnemonic, network: .ethereum)
             
             // Store securely
             try secureStorage.saveMnemonic(mnemonic, requireBiometric: useBiometric)
             try secureStorage.savePrivateKey(privateKey, requireBiometric: useBiometric)
-            try secureStorage.savePublicAddress(address)
+            
+            // Save addresses for all networks
+            for (network, address) in addresses {
+                try saveAddressForNetwork(address, network: network)
+            }
+            
             try secureStorage.saveBiometricEnabled(useBiometric)
             try secureStorage.saveWalletCreated(true)
             
             // Update state
             hasWallet = true
-            publicAddress = address
-            shortAddress = EthereumKeyManager.shortenAddress(address)
+            updateAddressForNetwork()
             isBiometricEnabled = useBiometric
             state = .authenticated
             
@@ -150,20 +167,28 @@ final class AuthenticationManager: ObservableObject {
                 throw MnemonicError.invalidMnemonic
             }
             
-            // Derive keys from mnemonic
-            let (privateKey, address) = try EthereumKeyManager.generateKeysFromMnemonic(mnemonic)
+            // Generate addresses for all networks
+            let addresses = try MultiChainKeyManager.generateAllAddresses(from: mnemonic)
+            networkAddresses = addresses
+            
+            // Get the private key for the default network (Ethereum)
+            let (privateKey, _) = try MultiChainKeyManager.generateKeysForNetwork(mnemonic, network: .ethereum)
             
             // Store securely
             try secureStorage.saveMnemonic(mnemonic, requireBiometric: useBiometric)
             try secureStorage.savePrivateKey(privateKey, requireBiometric: useBiometric)
-            try secureStorage.savePublicAddress(address)
+            
+            // Save addresses for all networks
+            for (network, address) in addresses {
+                try saveAddressForNetwork(address, network: network)
+            }
+            
             try secureStorage.saveBiometricEnabled(useBiometric)
             try secureStorage.saveWalletCreated(true)
             
             // Update state
             hasWallet = true
-            publicAddress = address
-            shortAddress = EthereumKeyManager.shortenAddress(address)
+            updateAddressForNetwork()
             isBiometricEnabled = useBiometric
             state = .authenticated
         } catch {
@@ -194,11 +219,9 @@ final class AuthenticationManager: ObservableObject {
                 )
                 
                 if success {
-                    // Load public address
-                    if let address = try? secureStorage.getPublicAddress() {
-                        publicAddress = address
-                        shortAddress = EthereumKeyManager.shortenAddress(address)
-                    }
+                    // Load addresses
+                    loadCachedAddresses()
+                    updateAddressForNetwork()
                     state = .authenticated
                 } else {
                     state = .locked
@@ -206,10 +229,8 @@ final class AuthenticationManager: ObservableObject {
                 }
             } else {
                 // No biometric required, just unlock
-                if let address = try? secureStorage.getPublicAddress() {
-                    publicAddress = address
-                    shortAddress = EthereumKeyManager.shortenAddress(address)
-                }
+                loadCachedAddresses()
+                updateAddressForNetwork()
                 state = .authenticated
             }
         } catch {
@@ -230,9 +251,14 @@ final class AuthenticationManager: ObservableObject {
     func signOut(deleteWallet: Bool = false) {
         if deleteWallet {
             secureStorage.deleteAllWalletData()
+            // Clear cached addresses
+            for network in BlockchainNetwork.allCases {
+                UserDefaults.standard.removeObject(forKey: addressKey(for: network))
+            }
             hasWallet = false
             publicAddress = nil
             shortAddress = nil
+            networkAddresses = [:]
         }
         
         isBiometricEnabled = false
@@ -258,21 +284,36 @@ final class AuthenticationManager: ObservableObject {
         }
     }
     
-    /// Get the private key (requires authentication)
-    /// - Returns: The stored private key data
-    func getPrivateKey() async throws -> Data {
+    /// Get the private key for a specific network (requires authentication)
+    /// - Parameter network: Target blockchain network
+    /// - Returns: The derived private key data
+    func getPrivateKey(for network: BlockchainNetwork) async throws -> Data {
         guard state == .authenticated else {
             throw BiometricError.cancelled
         }
         
+        let mnemonic: String
         if isBiometricEnabled {
             let context = try await biometricAuth.createAuthenticatedContext(
                 reason: "Access private key"
             )
-            return try secureStorage.getPrivateKey(context: context)
+            mnemonic = try secureStorage.getMnemonic(context: context)
         } else {
-            return try secureStorage.getPrivateKey()
+            mnemonic = try secureStorage.getMnemonic()
         }
+        
+        let (privateKey, _) = try MultiChainKeyManager.generateKeysForNetwork(mnemonic, network: network)
+        return privateKey
+    }
+    
+    /// Get the private key for the currently selected network
+    func getPrivateKey() async throws -> Data {
+        return try await getPrivateKey(for: selectedNetwork)
+    }
+    
+    /// Get address for a specific network
+    func getAddress(for network: BlockchainNetwork) -> String? {
+        return networkAddresses[network]
     }
     
     /// Check if biometric authentication is available
@@ -291,6 +332,44 @@ final class AuthenticationManager: ObservableObject {
         if case .error = state {
             state = hasWallet ? .locked : .unauthenticated
         }
+    }
+    
+    // MARK: - Private Methods
+    
+    /// Update the displayed address for the selected network
+    private func updateAddressForNetwork() {
+        if let address = networkAddresses[selectedNetwork] {
+            publicAddress = address
+            shortAddress = MultiChainKeyManager.shortenAddress(address, for: selectedNetwork)
+        } else if let address = loadAddressForNetwork(selectedNetwork) {
+            publicAddress = address
+            shortAddress = MultiChainKeyManager.shortenAddress(address, for: selectedNetwork)
+            networkAddresses[selectedNetwork] = address
+        }
+    }
+    
+    /// Load cached addresses from storage
+    private func loadCachedAddresses() {
+        for network in BlockchainNetwork.allCases {
+            if let address = loadAddressForNetwork(network) {
+                networkAddresses[network] = address
+            }
+        }
+    }
+    
+    /// Storage key for network address
+    private func addressKey(for network: BlockchainNetwork) -> String {
+        return "wallet.address.\(network.rawValue)"
+    }
+    
+    /// Save address for a network
+    private func saveAddressForNetwork(_ address: String, network: BlockchainNetwork) throws {
+        UserDefaults.standard.set(address, forKey: addressKey(for: network))
+    }
+    
+    /// Load address for a network
+    private func loadAddressForNetwork(_ network: BlockchainNetwork) -> String? {
+        return UserDefaults.standard.string(forKey: addressKey(for: network))
     }
 }
 

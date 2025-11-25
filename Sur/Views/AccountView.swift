@@ -2,12 +2,12 @@
 //  AccountView.swift
 //  Sur
 //
-//  Account view displaying public Ethereum address
+//  Account view displaying wallet address and network selection
 //
 
 import SwiftUI
 
-/// Account view displaying the user's Ethereum wallet information
+/// Account view displaying the user's wallet information
 struct AccountView: View {
     
     // MARK: - Properties
@@ -16,6 +16,7 @@ struct AccountView: View {
     @State private var showRecoveryPhrase = false
     @State private var showDeleteConfirmation = false
     @State private var showCopiedToast = false
+    @State private var showNetworkSelector = false
     @State private var recoveryPhrase: String?
     @State private var isLoadingPhrase = false
     @State private var showError = false
@@ -26,30 +27,48 @@ struct AccountView: View {
     var body: some View {
         NavigationStack {
             List {
-                // Address Section
+                // Network & Address Section
                 Section {
                     VStack(alignment: .center, spacing: 16) {
-                        // Wallet icon
-                        ZStack {
-                            Circle()
-                                .fill(
-                                    LinearGradient(
-                                        colors: [.orange, .red],
-                                        startPoint: .topLeading,
-                                        endPoint: .bottomTrailing
-                                    )
-                                )
-                                .frame(width: 80, height: 80)
-                            
-                            Image(systemName: "wallet.pass.fill")
-                                .font(.system(size: 36))
-                                .foregroundColor(.white)
+                        // Network selector button
+                        Button(action: { showNetworkSelector = true }) {
+                            HStack(spacing: 12) {
+                                // Network icon
+                                ZStack {
+                                    Circle()
+                                        .fill(authManager.selectedNetwork.color)
+                                        .frame(width: 44, height: 44)
+                                    
+                                    Image(systemName: authManager.selectedNetwork.iconName)
+                                        .font(.system(size: 20))
+                                        .foregroundColor(.white)
+                                }
+                                
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(authManager.selectedNetwork.displayName)
+                                        .font(.headline)
+                                        .foregroundColor(.primary)
+                                    Text(authManager.selectedNetwork.symbol)
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                }
+                                
+                                Spacer()
+                                
+                                Image(systemName: "chevron.down")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                            .padding(.vertical, 8)
                         }
+                        .buttonStyle(.plain)
+                        
+                        Divider()
                         
                         // Address
                         if let address = authManager.publicAddress {
                             VStack(spacing: 8) {
-                                Text("Your Ethereum Address")
+                                Text("Your \(authManager.selectedNetwork.displayName) Address")
                                     .font(.caption)
                                     .foregroundColor(.secondary)
                                 
@@ -65,7 +84,7 @@ struct AccountView: View {
                                         Text("Copy Address")
                                     }
                                     .font(.caption)
-                                    .foregroundColor(.orange)
+                                    .foregroundColor(authManager.selectedNetwork.color)
                                 }
                                 .buttonStyle(.plain)
                             }
@@ -73,6 +92,27 @@ struct AccountView: View {
                     }
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 16)
+                }
+                
+                // All Networks Section
+                Section {
+                    ForEach(BlockchainNetwork.allCases) { network in
+                        NetworkAddressRow(
+                            network: network,
+                            address: authManager.getAddress(for: network),
+                            isSelected: network == authManager.selectedNetwork,
+                            onSelect: {
+                                authManager.selectedNetwork = network
+                            },
+                            onCopy: { address in
+                                copyAddress(address)
+                            }
+                        )
+                    }
+                } header: {
+                    Text("All Networks")
+                } footer: {
+                    Text("Tap a network to switch. All addresses are derived from your recovery phrase.")
                 }
                 
                 // Security Section
@@ -153,6 +193,12 @@ struct AccountView: View {
                     .transition(.opacity.combined(with: .move(edge: .bottom)))
                 }
             }
+            .sheet(isPresented: $showNetworkSelector) {
+                NetworkSelectorSheet(
+                    selectedNetwork: $authManager.selectedNetwork,
+                    isPresented: $showNetworkSelector
+                )
+            }
             .sheet(isPresented: $showRecoveryPhrase) {
                 RecoveryPhraseSheet(
                     isPresented: $showRecoveryPhrase,
@@ -209,6 +255,130 @@ struct AccountView: View {
                     errorMessage = error.localizedDescription
                     showRecoveryPhrase = false
                     showError = true
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Network Address Row
+
+struct NetworkAddressRow: View {
+    let network: BlockchainNetwork
+    let address: String?
+    let isSelected: Bool
+    let onSelect: () -> Void
+    let onCopy: (String) -> Void
+    
+    var body: some View {
+        Button(action: onSelect) {
+            HStack(spacing: 12) {
+                // Network icon
+                ZStack {
+                    Circle()
+                        .fill(network.color.opacity(isSelected ? 1.0 : 0.3))
+                        .frame(width: 36, height: 36)
+                    
+                    Image(systemName: network.iconName)
+                        .font(.system(size: 16))
+                        .foregroundColor(isSelected ? .white : network.color)
+                }
+                
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack {
+                        Text(network.displayName)
+                            .font(.subheadline)
+                            .fontWeight(isSelected ? .semibold : .regular)
+                            .foregroundColor(.primary)
+                        
+                        if isSelected {
+                            Image(systemName: "checkmark.circle.fill")
+                                .font(.caption)
+                                .foregroundColor(.green)
+                        }
+                    }
+                    
+                    if let address = address {
+                        Text(MultiChainKeyManager.shortenAddress(address, for: network))
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .lineLimit(1)
+                    }
+                }
+                
+                Spacer()
+                
+                // Copy button
+                if let address = address {
+                    Button(action: { onCopy(address) }) {
+                        Image(systemName: "doc.on.doc")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.vertical, 4)
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+// MARK: - Network Selector Sheet
+
+struct NetworkSelectorSheet: View {
+    @Binding var selectedNetwork: BlockchainNetwork
+    @Binding var isPresented: Bool
+    
+    var body: some View {
+        NavigationStack {
+            List {
+                ForEach(BlockchainNetwork.allCases) { network in
+                    Button(action: {
+                        selectedNetwork = network
+                        isPresented = false
+                    }) {
+                        HStack(spacing: 16) {
+                            // Network icon
+                            ZStack {
+                                Circle()
+                                    .fill(network.color)
+                                    .frame(width: 44, height: 44)
+                                
+                                Image(systemName: network.iconName)
+                                    .font(.system(size: 20))
+                                    .foregroundColor(.white)
+                            }
+                            
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(network.displayName)
+                                    .font(.headline)
+                                    .foregroundColor(.primary)
+                                
+                                Text(network.symbol)
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                            
+                            Spacer()
+                            
+                            if network == selectedNetwork {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .foregroundColor(.green)
+                            }
+                        }
+                        .padding(.vertical, 8)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .navigationTitle("Select Network")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Done") {
+                        isPresented = false
+                    }
                 }
             }
         }
