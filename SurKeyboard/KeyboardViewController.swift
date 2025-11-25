@@ -491,6 +491,7 @@ class KeyboardViewController: UIInputViewController {
         bottomStack.distribution = .fill
         bottomStack.spacing = 6
         bottomStack.translatesAutoresizingMaskIntoConstraints = false
+        bottomStack.tag = 999  // Tag to identify the bottom row for hash bar constraints
         keyboardView.addSubview(bottomStack)
         
         // "123" button (switches to numbers mode)
@@ -572,10 +573,19 @@ class KeyboardViewController: UIInputViewController {
         hashBar.addSubview(copyButton)
         keyButtons.append(copyButton)
         
+        // Find the bottom row to anchor hash bar below it
+        // The bottom row is the last element in rowStackViews with tag 999, or just the last one
+        let bottomRowAnchor: NSLayoutYAxisAnchor
+        if let bottomRow = rowStackViews.last {
+            bottomRowAnchor = bottomRow.bottomAnchor
+        } else {
+            bottomRowAnchor = suggestionsView.bottomAnchor
+        }
+        
         NSLayoutConstraint.activate([
             hashBar.leadingAnchor.constraint(equalTo: keyboardView.leadingAnchor),
             hashBar.trailingAnchor.constraint(equalTo: keyboardView.trailingAnchor),
-            hashBar.bottomAnchor.constraint(equalTo: keyboardView.bottomAnchor, constant: -4),
+            hashBar.topAnchor.constraint(equalTo: bottomRowAnchor, constant: 4),
             hashBar.heightAnchor.constraint(equalToConstant: 36),
             
             checkIcon.leadingAnchor.constraint(equalTo: hashBar.leadingAnchor, constant: 16),
@@ -1126,6 +1136,7 @@ class KeyboardViewController: UIInputViewController {
         bottomStack.distribution = .fill
         bottomStack.spacing = 6
         bottomStack.translatesAutoresizingMaskIntoConstraints = false
+        bottomStack.tag = 999  // Tag to identify the bottom row for hash bar constraints
         keyboardView.addSubview(bottomStack)
         
         // Mode switch key ("123" or "ABC")
