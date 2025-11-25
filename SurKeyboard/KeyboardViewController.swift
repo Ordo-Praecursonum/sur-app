@@ -731,33 +731,7 @@ class KeyboardViewController: UIInputViewController {
     }
     
     private func setupEmojiPicker() {
-        // Category selector at the top
-        let categoryBar = UIStackView()
-        categoryBar.axis = .horizontal
-        categoryBar.distribution = .fillEqually
-        categoryBar.spacing = 4
-        categoryBar.translatesAutoresizingMaskIntoConstraints = false
-        keyboardView.addSubview(categoryBar)
-        emojiCategoryBar = categoryBar
-        
-        emojiCategoryButtons.removeAll()
-        for (index, category) in emojiCategories.enumerated() {
-            let button = UIButton(type: .system)
-            button.setImage(UIImage(systemName: category.icon), for: .normal)
-            button.tag = index
-            button.addTarget(self, action: #selector(emojiCategoryTapped(_:)), for: .touchUpInside)
-            categoryBar.addArrangedSubview(button)
-            emojiCategoryButtons.append(button)
-        }
-        
-        NSLayoutConstraint.activate([
-            categoryBar.topAnchor.constraint(equalTo: suggestionsView.bottomAnchor, constant: 4),
-            categoryBar.leadingAnchor.constraint(equalTo: keyboardView.leadingAnchor, constant: 8),
-            categoryBar.trailingAnchor.constraint(equalTo: keyboardView.trailingAnchor, constant: -8),
-            categoryBar.heightAnchor.constraint(equalToConstant: 36)
-        ])
-        
-        // Horizontal scroll view for emojis
+        // Horizontal scroll view for emojis (takes up most of the space)
         let scrollView = UIScrollView()
         scrollView.translatesAutoresizingMaskIntoConstraints = false
         scrollView.showsHorizontalScrollIndicator = false
@@ -766,10 +740,10 @@ class KeyboardViewController: UIInputViewController {
         emojiScrollView = scrollView
         
         NSLayoutConstraint.activate([
-            scrollView.topAnchor.constraint(equalTo: categoryBar.bottomAnchor, constant: 8),
+            scrollView.topAnchor.constraint(equalTo: suggestionsView.bottomAnchor, constant: 4),
             scrollView.leadingAnchor.constraint(equalTo: keyboardView.leadingAnchor),
             scrollView.trailingAnchor.constraint(equalTo: keyboardView.trailingAnchor),
-            scrollView.heightAnchor.constraint(equalToConstant: 120)
+            scrollView.heightAnchor.constraint(equalToConstant: 176)
         ])
         
         // Load initial category
@@ -791,14 +765,16 @@ class KeyboardViewController: UIInputViewController {
         }
         
         let emojis = emojiCategories[index].emojis
-        let emojiSize: CGFloat = 40
-        let spacing: CGFloat = 8
-        let rows = 3
-        let scrollViewHeight: CGFloat = 120
+        let emojiSize: CGFloat = 44
+        let horizontalSpacing: CGFloat = 4
+        let verticalSpacing: CGFloat = 4
+        let rows = 4
+        let scrollViewHeight: CGFloat = 160
+        let leftPadding: CGFloat = 8
         
         // Create emoji buttons in a grid that scrolls horizontally
         let columns = (emojis.count + rows - 1) / rows
-        let contentWidth = CGFloat(columns) * (emojiSize + spacing) + spacing
+        let contentWidth = leftPadding + CGFloat(columns) * (emojiSize + horizontalSpacing)
         
         for (i, emoji) in emojis.enumerated() {
             let row = i % rows
@@ -806,11 +782,11 @@ class KeyboardViewController: UIInputViewController {
             
             let button = UIButton(type: .system)
             button.setTitle(emoji, for: .normal)
-            button.titleLabel?.font = UIFont.systemFont(ofSize: 28)
+            button.titleLabel?.font = UIFont.systemFont(ofSize: 32)
             button.addTarget(self, action: #selector(emojiTapped(_:)), for: .touchUpInside)
             button.frame = CGRect(
-                x: spacing + CGFloat(col) * (emojiSize + spacing),
-                y: CGFloat(row) * (emojiSize + spacing),
+                x: leftPadding + CGFloat(col) * (emojiSize + horizontalSpacing),
+                y: CGFloat(row) * (emojiSize + verticalSpacing),
                 width: emojiSize,
                 height: emojiSize
             )
@@ -847,44 +823,52 @@ class KeyboardViewController: UIInputViewController {
         let bottomStack = UIStackView()
         bottomStack.axis = .horizontal
         bottomStack.distribution = .fill
-        bottomStack.spacing = 6
+        bottomStack.spacing = 4
         bottomStack.translatesAutoresizingMaskIntoConstraints = false
         keyboardView.addSubview(bottomStack)
         
         // ABC button (return to letters)
-        let abcKey = createSpecialKey(type: .letters, width: 42)
+        let abcKey = createSpecialKey(type: .letters, width: 50)
         abcKey.setTitle("ABC", for: .normal)
         abcKey.titleLabel?.font = UIFont.systemFont(ofSize: 14, weight: .medium)
         bottomStack.addArrangedSubview(abcKey)
         keyButtons.append(abcKey)
         
-        // Space bar (flexible width)
-        let spaceKey = createSpecialKey(type: .space, width: 0)
-        spaceKey.setTitle("", for: .normal)
-        bottomStack.addArrangedSubview(spaceKey)
-        keyButtons.append(spaceKey)
+        // Category icons in the middle
+        let categoryStack = UIStackView()
+        categoryStack.axis = .horizontal
+        categoryStack.distribution = .fillEqually
+        categoryStack.spacing = 2
+        categoryStack.translatesAutoresizingMaskIntoConstraints = false
+        
+        // Clear and rebuild category buttons
+        emojiCategoryButtons.removeAll()
+        
+        // Add category icons to bottom bar
+        for (index, category) in emojiCategories.enumerated() {
+            let button = UIButton(type: .system)
+            button.setImage(UIImage(systemName: category.icon), for: .normal)
+            button.tag = index
+            button.tintColor = index == currentEmojiCategoryIndex ? (isDarkMode ? .white : .systemBlue) : .gray
+            button.addTarget(self, action: #selector(emojiCategoryTapped(_:)), for: .touchUpInside)
+            categoryStack.addArrangedSubview(button)
+            emojiCategoryButtons.append(button)
+        }
+        
+        bottomStack.addArrangedSubview(categoryStack)
         
         // Delete key
-        let deleteKey = createSpecialKey(type: .delete, width: 42)
+        let deleteKey = createSpecialKey(type: .delete, width: 50)
         bottomStack.addArrangedSubview(deleteKey)
         keyButtons.append(deleteKey)
         
-        // Return key
-        let returnKey = createSpecialKey(type: .returnKey, width: 88)
-        returnKey.setImage(UIImage(systemName: "return"), for: .normal)
-        returnKey.backgroundColor = UIColor.systemBlue
-        returnKey.tintColor = .white
-        bottomStack.addArrangedSubview(returnKey)
-        keyButtons.append(returnKey)
-        
         NSLayoutConstraint.activate([
-            bottomStack.topAnchor.constraint(equalTo: topAnchor, constant: 8),
+            bottomStack.topAnchor.constraint(equalTo: topAnchor, constant: 4),
             bottomStack.leadingAnchor.constraint(equalTo: keyboardView.leadingAnchor, constant: 3),
             bottomStack.trailingAnchor.constraint(equalTo: keyboardView.trailingAnchor, constant: -3),
-            bottomStack.heightAnchor.constraint(equalToConstant: 42),
-            abcKey.widthAnchor.constraint(equalToConstant: 42),
-            deleteKey.widthAnchor.constraint(equalToConstant: 42),
-            returnKey.widthAnchor.constraint(equalToConstant: 88)
+            bottomStack.heightAnchor.constraint(equalToConstant: 36),
+            abcKey.widthAnchor.constraint(equalToConstant: 50),
+            deleteKey.widthAnchor.constraint(equalToConstant: 50)
         ])
         
         rowStackViews.append(bottomStack)
