@@ -159,6 +159,10 @@ class KeyboardViewController: UIInputViewController {
     private var currentMode: KeyboardMode = .letters
     private var shiftState: ShiftState = .off
     
+    // Delete key repeat timer
+    private var deleteTimer: Timer?
+    private var deleteRepeatInterval: TimeInterval = 0.1 // Initial repeat rate
+    
     private let letterRows = [
         ["q", "w", "e", "r", "t", "y", "u", "i", "o", "p"],
         ["a", "s", "d", "f", "g", "h", "j", "k", "l"],
@@ -646,11 +650,45 @@ class KeyboardViewController: UIInputViewController {
         if case .character = sender.keyType {
             sender.showKeyPopup(in: keyboardView, isDarkMode: isDarkMode)
         }
+        
+        // Start delete repeat timer for delete key
+        if case .delete = sender.keyType {
+            startDeleteTimer()
+        }
     }
     
     @objc private func keyTouchUp(_ sender: KeyButton) {
         sender.animateRelease()
         sender.removeKeyPopup()
+        
+        // Stop delete timer
+        if case .delete = sender.keyType {
+            stopDeleteTimer()
+        }
+    }
+    
+    // MARK: - Delete Key Repeat
+    private func startDeleteTimer() {
+        // Stop any existing timer
+        stopDeleteTimer()
+        
+        // Start with initial delay before repeating
+        deleteTimer = Timer.scheduledTimer(withTimeInterval: 0.4, repeats: false) { [weak self] _ in
+            self?.startFastDeleteTimer()
+        }
+    }
+    
+    private func startFastDeleteTimer() {
+        // Start rapid deletion
+        deleteTimer = Timer.scheduledTimer(withTimeInterval: 0.08, repeats: true) { [weak self] _ in
+            self?.textDocumentProxy.deleteBackward()
+            self?.triggerHapticFeedback()
+        }
+    }
+    
+    private func stopDeleteTimer() {
+        deleteTimer?.invalidate()
+        deleteTimer = nil
     }
     
     @objc private func keyTapped(_ sender: KeyButton) {
