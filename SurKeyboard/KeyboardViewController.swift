@@ -322,7 +322,8 @@ class KeyboardViewController: UIInputViewController {
     // MARK: - Setup
     private func setupKeyboardView() {
         // Set a fixed height for the keyboard to ensure all elements are visible
-        let keyboardHeight: CGFloat = 300
+        // Including hash bar at the bottom (36pt) plus safe area
+        let keyboardHeight: CGFloat = 320
         
         keyboardView = UIView()
         keyboardView.translatesAutoresizingMaskIntoConstraints = false
@@ -540,6 +541,7 @@ class KeyboardViewController: UIInputViewController {
         
         let hashBar = UIView()
         hashBar.translatesAutoresizingMaskIntoConstraints = false
+        hashBar.backgroundColor = .clear  // Ensure the bar itself is visible
         keyboardView.addSubview(hashBar)
         hashBarView = hashBar
         
@@ -573,11 +575,11 @@ class KeyboardViewController: UIInputViewController {
         hashBar.addSubview(copyButton)
         keyButtons.append(copyButton)
         
-        // Anchor hash bar to bottom of keyboardView always
+        // Anchor hash bar to bottom of keyboardView always with safe area consideration
         NSLayoutConstraint.activate([
             hashBar.leadingAnchor.constraint(equalTo: keyboardView.leadingAnchor),
             hashBar.trailingAnchor.constraint(equalTo: keyboardView.trailingAnchor),
-            hashBar.bottomAnchor.constraint(equalTo: keyboardView.bottomAnchor, constant: -4),
+            hashBar.bottomAnchor.constraint(equalTo: keyboardView.safeAreaLayoutGuide.bottomAnchor, constant: 0),
             hashBar.heightAnchor.constraint(equalToConstant: 36),
             
             checkIcon.leadingAnchor.constraint(equalTo: hashBar.leadingAnchor, constant: 16),
@@ -1034,8 +1036,13 @@ class KeyboardViewController: UIInputViewController {
             setupBottomRowForMode(mode)
         }
         
-        // Always rebuild the hash bar
+        // Always rebuild the hash bar LAST so it's on top
         setupHashBar()
+        
+        // Bring hash bar to front to ensure visibility
+        if let hashBar = hashBarView {
+            keyboardView.bringSubviewToFront(hashBar)
+        }
         
         updateColors()
     }
