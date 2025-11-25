@@ -301,20 +301,17 @@ class KeyboardViewController: UIInputViewController {
             containerView.trailingAnchor.constraint(equalTo: keyboardView.trailingAnchor, constant: -3)
         ])
         
-        for (index, row) in letterRows.enumerated() {
+        // Margin for second row (9 keys) to keep consistent key sizes
+        let secondRowMargin: CGFloat = 18
+        
+        // Only create first two rows in the loop, handle third row separately
+        for (index, row) in letterRows.enumerated() where index < 2 {
             let rowStack = UIStackView()
             rowStack.axis = .horizontal
-            rowStack.distribution = .fill
+            rowStack.distribution = .fillEqually
             rowStack.spacing = 6
             rowStack.translatesAutoresizingMaskIntoConstraints = false
             containerView.addSubview(rowStack)
-            
-            // Add shift key at the beginning of the third row
-            if index == 2 {
-                let shiftKey = createSpecialKey(type: .shift, width: 42)
-                rowStack.addArrangedSubview(shiftKey)
-                keyButtons.append(shiftKey)
-            }
             
             for character in row {
                 let keyButton = createCharacterKey(character)
@@ -322,16 +319,12 @@ class KeyboardViewController: UIInputViewController {
                 keyButtons.append(keyButton)
             }
             
-            // Add delete key at the end of the third row
-            if index == 2 {
-                let deleteKey = createSpecialKey(type: .delete, width: 42)
-                rowStack.addArrangedSubview(deleteKey)
-                keyButtons.append(deleteKey)
-            }
+            // Second row - add margins to center 9 keys
+            let margin: CGFloat = index == 1 ? secondRowMargin : 0
             
             NSLayoutConstraint.activate([
-                rowStack.leadingAnchor.constraint(equalTo: containerView.leadingAnchor),
-                rowStack.trailingAnchor.constraint(equalTo: containerView.trailingAnchor),
+                rowStack.leadingAnchor.constraint(equalTo: containerView.leadingAnchor, constant: margin),
+                rowStack.trailingAnchor.constraint(equalTo: containerView.trailingAnchor, constant: -margin),
                 rowStack.heightAnchor.constraint(equalToConstant: 42)
             ])
             
@@ -344,9 +337,58 @@ class KeyboardViewController: UIInputViewController {
             rowStackViews.append(rowStack)
         }
         
+        // Add third row with shift and delete
+        createThirdRowWithSpecialKeys(containerView: containerView, characters: letterRows[2], leftKeyType: .shift, leftKeyTitle: nil)
+        
         if let lastRow = rowStackViews.last {
             containerView.bottomAnchor.constraint(equalTo: lastRow.bottomAnchor).isActive = true
         }
+    }
+    
+    /// Creates the third row with special keys on left and right, and character keys in the middle
+    private func createThirdRowWithSpecialKeys(containerView: UIView, characters: [String], leftKeyType: KeyButton.KeyType, leftKeyTitle: String?) {
+        let rowStack = UIStackView()
+        rowStack.axis = .horizontal
+        rowStack.distribution = .fill
+        rowStack.spacing = 6
+        rowStack.translatesAutoresizingMaskIntoConstraints = false
+        containerView.addSubview(rowStack)
+        
+        // Left special key (shift or symbols)
+        let leftKey = createSpecialKey(type: leftKeyType, width: 42)
+        if let title = leftKeyTitle {
+            leftKey.setTitle(title, for: .normal)
+        }
+        rowStack.addArrangedSubview(leftKey)
+        keyButtons.append(leftKey)
+        
+        // Letter/character keys container with equal distribution
+        let lettersStack = UIStackView()
+        lettersStack.axis = .horizontal
+        lettersStack.distribution = .fillEqually
+        lettersStack.spacing = 6
+        lettersStack.translatesAutoresizingMaskIntoConstraints = false
+        
+        for character in characters {
+            let keyButton = createCharacterKey(character)
+            lettersStack.addArrangedSubview(keyButton)
+            keyButtons.append(keyButton)
+        }
+        rowStack.addArrangedSubview(lettersStack)
+        
+        // Delete key
+        let deleteKey = createSpecialKey(type: .delete, width: 42)
+        rowStack.addArrangedSubview(deleteKey)
+        keyButtons.append(deleteKey)
+        
+        NSLayoutConstraint.activate([
+            rowStack.leadingAnchor.constraint(equalTo: containerView.leadingAnchor),
+            rowStack.trailingAnchor.constraint(equalTo: containerView.trailingAnchor),
+            rowStack.heightAnchor.constraint(equalToConstant: 42),
+            rowStack.topAnchor.constraint(equalTo: rowStackViews.last!.bottomAnchor, constant: 12)
+        ])
+        
+        rowStackViews.append(rowStack)
     }
     
     private func setupBottomRow() {
@@ -357,14 +399,20 @@ class KeyboardViewController: UIInputViewController {
         bottomStack.translatesAutoresizingMaskIntoConstraints = false
         keyboardView.addSubview(bottomStack)
         
-        // "? ABC" button (switches to numbers mode)
-        let modeKey = createSpecialKey(type: .numbers, width: 50)
-        modeKey.setTitle("? ABC", for: .normal)
+        // "123" button (switches to numbers mode)
+        let modeKey = createSpecialKey(type: .numbers, width: 42)
+        modeKey.setTitle("123", for: .normal)
         modeKey.titleLabel?.font = UIFont.systemFont(ofSize: 14, weight: .medium)
         bottomStack.addArrangedSubview(modeKey)
         keyButtons.append(modeKey)
         
-        // Space bar
+        // Emoji button
+        let emojiKey = createSpecialKey(type: .emoji, width: 42)
+        emojiKey.setImage(UIImage(systemName: "face.smiling"), for: .normal)
+        bottomStack.addArrangedSubview(emojiKey)
+        keyButtons.append(emojiKey)
+        
+        // Space bar (flexible width)
         let spaceKey = createSpecialKey(type: .space, width: 0)
         spaceKey.setTitle("", for: .normal)
         bottomStack.addArrangedSubview(spaceKey)
@@ -383,7 +431,8 @@ class KeyboardViewController: UIInputViewController {
             bottomStack.leadingAnchor.constraint(equalTo: keyboardView.leadingAnchor, constant: 3),
             bottomStack.trailingAnchor.constraint(equalTo: keyboardView.trailingAnchor, constant: -3),
             bottomStack.heightAnchor.constraint(equalToConstant: 42),
-            modeKey.widthAnchor.constraint(equalToConstant: 50),
+            modeKey.widthAnchor.constraint(equalToConstant: 42),
+            emojiKey.widthAnchor.constraint(equalToConstant: 42),
             returnKey.widthAnchor.constraint(equalToConstant: 88)
         ])
         
@@ -395,16 +444,16 @@ class KeyboardViewController: UIInputViewController {
         hashBar.translatesAutoresizingMaskIntoConstraints = false
         keyboardView.addSubview(hashBar)
         
-        // Emoji button
-        let emojiButton = KeyButton()
-        emojiButton.keyType = .emoji
-        emojiButton.setImage(UIImage(systemName: "face.smiling"), for: .normal)
-        emojiButton.translatesAutoresizingMaskIntoConstraints = false
-        emojiButton.addTarget(self, action: #selector(keyTouchDown(_:)), for: .touchDown)
-        emojiButton.addTarget(self, action: #selector(keyTapped(_:)), for: .touchUpInside)
-        emojiButton.addTarget(self, action: #selector(keyTouchUp(_:)), for: [.touchUpOutside, .touchCancel])
-        hashBar.addSubview(emojiButton)
-        keyButtons.append(emojiButton)
+        // Emoji icon on the left (for display, emoji button is in bottom row)
+        let emojiIcon = KeyButton()
+        emojiIcon.keyType = .emoji
+        emojiIcon.setImage(UIImage(systemName: "face.smiling"), for: .normal)
+        emojiIcon.translatesAutoresizingMaskIntoConstraints = false
+        emojiIcon.addTarget(self, action: #selector(keyTouchDown(_:)), for: .touchDown)
+        emojiIcon.addTarget(self, action: #selector(keyTapped(_:)), for: .touchUpInside)
+        emojiIcon.addTarget(self, action: #selector(keyTouchUp(_:)), for: [.touchUpOutside, .touchCancel])
+        hashBar.addSubview(emojiIcon)
+        keyButtons.append(emojiIcon)
         
         // Hash label
         hashLabel = UILabel()
@@ -425,17 +474,6 @@ class KeyboardViewController: UIInputViewController {
         hashBar.addSubview(micButton)
         keyButtons.append(micButton)
         
-        // Globe button (next keyboard)
-        let globeButton = KeyButton()
-        globeButton.keyType = .globe
-        if needsInputModeSwitchKey {
-            globeButton.setImage(UIImage(systemName: "globe"), for: .normal)
-            globeButton.addTarget(self, action: #selector(handleInputModeList(from:with:)), for: .allTouchEvents)
-        }
-        globeButton.translatesAutoresizingMaskIntoConstraints = false
-        hashBar.insertSubview(globeButton, at: 0)
-        keyButtons.append(globeButton)
-        
         NSLayoutConstraint.activate([
             hashBar.topAnchor.constraint(equalTo: rowStackViews.last!.bottomAnchor, constant: 8),
             hashBar.leadingAnchor.constraint(equalTo: keyboardView.leadingAnchor),
@@ -443,10 +481,10 @@ class KeyboardViewController: UIInputViewController {
             hashBar.bottomAnchor.constraint(equalTo: keyboardView.bottomAnchor, constant: -4),
             hashBar.heightAnchor.constraint(equalToConstant: 36),
             
-            emojiButton.leadingAnchor.constraint(equalTo: hashBar.leadingAnchor, constant: 16),
-            emojiButton.centerYAnchor.constraint(equalTo: hashBar.centerYAnchor),
-            emojiButton.widthAnchor.constraint(equalToConstant: 36),
-            emojiButton.heightAnchor.constraint(equalToConstant: 36),
+            emojiIcon.leadingAnchor.constraint(equalTo: hashBar.leadingAnchor, constant: 16),
+            emojiIcon.centerYAnchor.constraint(equalTo: hashBar.centerYAnchor),
+            emojiIcon.widthAnchor.constraint(equalToConstant: 36),
+            emojiIcon.heightAnchor.constraint(equalToConstant: 36),
             
             hashLabel.centerXAnchor.constraint(equalTo: hashBar.centerXAnchor),
             hashLabel.centerYAnchor.constraint(equalTo: hashBar.centerYAnchor),
@@ -454,12 +492,7 @@ class KeyboardViewController: UIInputViewController {
             micButton.trailingAnchor.constraint(equalTo: hashBar.trailingAnchor, constant: -16),
             micButton.centerYAnchor.constraint(equalTo: hashBar.centerYAnchor),
             micButton.widthAnchor.constraint(equalToConstant: 36),
-            micButton.heightAnchor.constraint(equalToConstant: 36),
-            
-            globeButton.leadingAnchor.constraint(equalTo: emojiButton.trailingAnchor, constant: 8),
-            globeButton.centerYAnchor.constraint(equalTo: hashBar.centerYAnchor),
-            globeButton.widthAnchor.constraint(equalToConstant: 36),
-            globeButton.heightAnchor.constraint(equalToConstant: 36)
+            micButton.heightAnchor.constraint(equalToConstant: 36)
         ])
     }
     
@@ -698,27 +731,21 @@ class KeyboardViewController: UIInputViewController {
             containerView.trailingAnchor.constraint(equalTo: keyboardView.trailingAnchor, constant: -3)
         ])
         
+        // Margin for second row (9 keys)
+        let secondRowMargin: CGFloat = 18
+        
         for (index, row) in rows.enumerated() {
+            // Skip third row - we'll handle it separately with special keys
+            if index == 2 {
+                continue
+            }
+            
             let rowStack = UIStackView()
             rowStack.axis = .horizontal
-            rowStack.distribution = .fill
+            rowStack.distribution = .fillEqually
             rowStack.spacing = 6
             rowStack.translatesAutoresizingMaskIntoConstraints = false
             containerView.addSubview(rowStack)
-            
-            // Add special keys for third row
-            if index == 2 {
-                if mode == .letters {
-                    let shiftKey = createSpecialKey(type: .shift, width: 42)
-                    rowStack.addArrangedSubview(shiftKey)
-                    keyButtons.append(shiftKey)
-                } else {
-                    let symbolKey = createSpecialKey(type: .symbols, width: 42)
-                    symbolKey.setTitle(mode == .numbers ? "#+=": "123", for: .normal)
-                    rowStack.addArrangedSubview(symbolKey)
-                    keyButtons.append(symbolKey)
-                }
-            }
             
             for character in row {
                 let keyButton = createCharacterKey(character)
@@ -726,26 +753,30 @@ class KeyboardViewController: UIInputViewController {
                 keyButtons.append(keyButton)
             }
             
-            // Add delete key at the end of the third row
-            if index == 2 {
-                let deleteKey = createSpecialKey(type: .delete, width: 42)
-                rowStack.addArrangedSubview(deleteKey)
-                keyButtons.append(deleteKey)
-            }
+            // Second row - add margins to center 9 keys (only for letters mode)
+            let margin: CGFloat = (mode == .letters && index == 1) ? secondRowMargin : 0
             
             NSLayoutConstraint.activate([
-                rowStack.leadingAnchor.constraint(equalTo: containerView.leadingAnchor),
-                rowStack.trailingAnchor.constraint(equalTo: containerView.trailingAnchor),
+                rowStack.leadingAnchor.constraint(equalTo: containerView.leadingAnchor, constant: margin),
+                rowStack.trailingAnchor.constraint(equalTo: containerView.trailingAnchor, constant: -margin),
                 rowStack.heightAnchor.constraint(equalToConstant: 42)
             ])
             
-            if index == 0 {
+            if rowStackViews.isEmpty {
                 rowStack.topAnchor.constraint(equalTo: containerView.topAnchor).isActive = true
             } else {
-                rowStack.topAnchor.constraint(equalTo: rowStackViews[index - 1].bottomAnchor, constant: 12).isActive = true
+                rowStack.topAnchor.constraint(equalTo: rowStackViews.last!.bottomAnchor, constant: 12).isActive = true
             }
             
             rowStackViews.append(rowStack)
+        }
+        
+        // Add third row with special keys
+        if mode == .letters {
+            createThirdRowWithSpecialKeys(containerView: containerView, characters: letterRows[2], leftKeyType: .shift, leftKeyTitle: nil)
+        } else {
+            let title = mode == .numbers ? "#+=": "123"
+            createThirdRowWithSpecialKeys(containerView: containerView, characters: rows[2], leftKeyType: .symbols, leftKeyTitle: title)
         }
         
         if let lastRow = rowStackViews.last {
@@ -761,14 +792,20 @@ class KeyboardViewController: UIInputViewController {
         bottomStack.translatesAutoresizingMaskIntoConstraints = false
         keyboardView.addSubview(bottomStack)
         
-        // Mode switch key
-        let modeKey = createSpecialKey(type: .numbers, width: 50)
-        modeKey.setTitle(mode == .letters ? "? ABC" : "ABC", for: .normal)
+        // Mode switch key ("123" or "ABC")
+        let modeKey = createSpecialKey(type: .numbers, width: 42)
+        modeKey.setTitle(mode == .letters ? "123" : "ABC", for: .normal)
         modeKey.titleLabel?.font = UIFont.systemFont(ofSize: 14, weight: .medium)
         bottomStack.addArrangedSubview(modeKey)
         keyButtons.append(modeKey)
         
-        // Space bar
+        // Emoji button
+        let emojiKey = createSpecialKey(type: .emoji, width: 42)
+        emojiKey.setImage(UIImage(systemName: "face.smiling"), for: .normal)
+        bottomStack.addArrangedSubview(emojiKey)
+        keyButtons.append(emojiKey)
+        
+        // Space bar (flexible width)
         let spaceKey = createSpecialKey(type: .space, width: 0)
         spaceKey.setTitle("", for: .normal)
         bottomStack.addArrangedSubview(spaceKey)
@@ -787,7 +824,8 @@ class KeyboardViewController: UIInputViewController {
             bottomStack.leadingAnchor.constraint(equalTo: keyboardView.leadingAnchor, constant: 3),
             bottomStack.trailingAnchor.constraint(equalTo: keyboardView.trailingAnchor, constant: -3),
             bottomStack.heightAnchor.constraint(equalToConstant: 42),
-            modeKey.widthAnchor.constraint(equalToConstant: 50),
+            modeKey.widthAnchor.constraint(equalToConstant: 42),
+            emojiKey.widthAnchor.constraint(equalToConstant: 42),
             returnKey.widthAnchor.constraint(equalToConstant: 88)
         ])
         
