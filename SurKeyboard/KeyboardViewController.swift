@@ -349,9 +349,9 @@ class KeyboardViewController: UIInputViewController {
         bottomStack.translatesAutoresizingMaskIntoConstraints = false
         keyboardView.addSubview(bottomStack)
         
-        // "? ABC" or "123" button
+        // "123" button (switches to numbers mode)
         let modeKey = createSpecialKey(type: .numbers, width: 50)
-        modeKey.setTitle("? ABC", for: .normal)
+        modeKey.setTitle("123", for: .normal)
         modeKey.titleLabel?.font = UIFont.systemFont(ofSize: 14, weight: .medium)
         bottomStack.addArrangedSubview(modeKey)
         keyButtons.append(modeKey)
@@ -754,7 +754,7 @@ class KeyboardViewController: UIInputViewController {
         
         // Mode switch key
         let modeKey = createSpecialKey(type: .numbers, width: 50)
-        modeKey.setTitle(mode == .letters ? "? ABC" : "ABC", for: .normal)
+        modeKey.setTitle(mode == .letters ? "123" : "ABC", for: .normal)
         modeKey.titleLabel?.font = UIFont.systemFont(ofSize: 14, weight: .medium)
         bottomStack.addArrangedSubview(modeKey)
         keyButtons.append(modeKey)
