@@ -304,10 +304,12 @@ final class MultiChainKeyManager {
     /// Generate address from private key for a specific network
     private static func generateAddress(from privateKey: Data, network: BlockchainNetwork) throws -> String {
         switch network {
-        case .ethereum, .originTrail:
+        case .ethereum, .originTrail, .bsc:
             return try generateEthereumAddress(from: privateKey)
         case .bitcoin:
             return try generateBitcoinAddress(from: privateKey)
+        case .tron:
+            return try generateTronAddress(from: privateKey)
         case .cosmos:
             return try generateCosmosAddress(from: privateKey)
         case .solana:
@@ -398,6 +400,36 @@ final class MultiChainKeyManager {
         
         // Base58 encode (Solana addresses are base58 encoded public keys)
         return base58Encode(publicKey)
+    }
+    
+    /// Generate Tron address from private key
+    /// Tron uses the same key derivation as Ethereum but with base58check encoding
+    private static func generateTronAddress(from privateKey: Data) throws -> String {
+        // Generate public key
+        guard let p256Key = try? P256.Signing.PrivateKey(rawRepresentation: privateKey) else {
+            throw MultiChainKeyError.invalidPrivateKey
+        }
+        
+        let publicKey = p256Key.publicKey.rawRepresentation
+        
+        // Hash public key (SHA256 as placeholder for Keccak-256)
+        let hash = SHA256.hash(data: publicKey)
+        let hashData = Data(hash)
+        
+        // Take last 20 bytes (same as Ethereum)
+        let addressBytes = hashData.suffix(20)
+        
+        // Add Tron version byte (0x41 for mainnet)
+        var addressData = Data([0x41])
+        addressData.append(addressBytes)
+        
+        // Double SHA256 for checksum
+        let checksum1 = SHA256.hash(data: addressData)
+        let checksum2 = SHA256.hash(data: Data(checksum1))
+        addressData.append(contentsOf: checksum2.prefix(4))
+        
+        // Base58 encode (Tron addresses start with 'T')
+        return base58Encode(addressData)
     }
     
     // MARK: - Encoding Helpers

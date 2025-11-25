@@ -33,16 +33,10 @@ struct AccountView: View {
                         // Network selector button
                         Button(action: { showNetworkSelector = true }) {
                             HStack(spacing: 12) {
-                                // Network icon with orange gradient
+                                // Network icon with network-specific color
                                 ZStack {
                                     Circle()
-                                        .fill(
-                                            LinearGradient(
-                                                colors: [.orange, .red],
-                                                startPoint: .topLeading,
-                                                endPoint: .bottomTrailing
-                                            )
-                                        )
+                                        .fill(authManager.selectedNetwork.color)
                                         .frame(width: 44, height: 44)
                                     
                                     Image(systemName: authManager.selectedNetwork.iconName)
@@ -262,16 +256,10 @@ struct NetworkSelectorSheet: View {
                         isPresented = false
                     }) {
                         HStack(spacing: 16) {
-                            // Network icon with orange gradient
+                            // Network icon with network-specific color
                             ZStack {
                                 Circle()
-                                    .fill(
-                                        LinearGradient(
-                                            colors: [.orange, .red],
-                                            startPoint: .topLeading,
-                                            endPoint: .bottomTrailing
-                                        )
-                                    )
+                                    .fill(network.color)
                                     .frame(width: 44, height: 44)
                                 
                                 Image(systemName: network.iconName)

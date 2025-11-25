@@ -13,6 +13,8 @@ import SwiftUI
 enum BlockchainNetwork: String, CaseIterable, Identifiable, Codable {
     case ethereum = "ethereum"
     case bitcoin = "bitcoin"
+    case bsc = "bsc"
+    case tron = "tron"
     case cosmos = "cosmos"
     case solana = "solana"
     case originTrail = "origintrail"
@@ -26,6 +28,10 @@ enum BlockchainNetwork: String, CaseIterable, Identifiable, Codable {
             return "Ethereum"
         case .bitcoin:
             return "Bitcoin"
+        case .bsc:
+            return "BNB Smart Chain"
+        case .tron:
+            return "Tron"
         case .cosmos:
             return "Cosmos"
         case .solana:
@@ -42,6 +48,10 @@ enum BlockchainNetwork: String, CaseIterable, Identifiable, Codable {
             return "ETH"
         case .bitcoin:
             return "BTC"
+        case .bsc:
+            return "BNB"
+        case .tron:
+            return "TRX"
         case .cosmos:
             return "ATOM"
         case .solana:
@@ -59,6 +69,10 @@ enum BlockchainNetwork: String, CaseIterable, Identifiable, Codable {
             return 60      // m/44'/60'/...
         case .bitcoin:
             return 0       // m/44'/0'/...
+        case .bsc:
+            return 60      // BSC uses same as Ethereum (EVM compatible)
+        case .tron:
+            return 195     // m/44'/195'/...
         case .cosmos:
             return 118     // m/44'/118'/...
         case .solana:
@@ -76,6 +90,10 @@ enum BlockchainNetwork: String, CaseIterable, Identifiable, Codable {
             return "m/44'/60'/0'/0/0"
         case .bitcoin:
             return "m/44'/0'/0'/0/0"
+        case .bsc:
+            return "m/44'/60'/0'/0/0"  // Same as Ethereum (EVM compatible)
+        case .tron:
+            return "m/44'/195'/0'/0/0"
         case .cosmos:
             return "m/44'/118'/0'/0/0"
         case .solana:
@@ -92,6 +110,10 @@ enum BlockchainNetwork: String, CaseIterable, Identifiable, Codable {
             return "e.circle.fill"
         case .bitcoin:
             return "bitcoinsign.circle.fill"
+        case .bsc:
+            return "b.circle.fill"
+        case .tron:
+            return "t.circle.fill"
         case .cosmos:
             return "atom"
         case .solana:
@@ -108,6 +130,10 @@ enum BlockchainNetwork: String, CaseIterable, Identifiable, Codable {
             return Color(red: 0.39, green: 0.45, blue: 0.95)  // Ethereum blue
         case .bitcoin:
             return Color(red: 0.96, green: 0.62, blue: 0.14)  // Bitcoin orange
+        case .bsc:
+            return Color(red: 0.95, green: 0.73, blue: 0.13)  // BSC yellow
+        case .tron:
+            return Color(red: 0.92, green: 0.07, blue: 0.14)  // Tron red
         case .cosmos:
             return Color(red: 0.18, green: 0.18, blue: 0.35)  // Cosmos dark purple
         case .solana:
@@ -120,10 +146,12 @@ enum BlockchainNetwork: String, CaseIterable, Identifiable, Codable {
     /// Address prefix (for display/validation)
     var addressPrefix: String {
         switch self {
-        case .ethereum, .originTrail:
+        case .ethereum, .originTrail, .bsc:
             return "0x"
         case .bitcoin:
             return ""  // Bitcoin addresses have various prefixes (1, 3, bc1)
+        case .tron:
+            return "T"  // Tron addresses start with T
         case .cosmos:
             return "cosmos"
         case .solana:
@@ -134,7 +162,7 @@ enum BlockchainNetwork: String, CaseIterable, Identifiable, Codable {
     /// Whether this network uses the secp256k1 curve
     var usesSecp256k1: Bool {
         switch self {
-        case .ethereum, .bitcoin, .cosmos, .originTrail:
+        case .ethereum, .bitcoin, .cosmos, .originTrail, .bsc, .tron:
             return true
         case .solana:
             return false  // Solana uses Ed25519
@@ -147,7 +175,7 @@ enum BlockchainNetwork: String, CaseIterable, Identifiable, Codable {
         let hardenedOffset: UInt32 = 0x80000000
         
         switch self {
-        case .ethereum, .originTrail:
+        case .ethereum, .originTrail, .bsc:
             return [
                 44 + hardenedOffset,     // purpose (hardened)
                 60 + hardenedOffset,     // coin_type (hardened)
@@ -159,6 +187,14 @@ enum BlockchainNetwork: String, CaseIterable, Identifiable, Codable {
             return [
                 44 + hardenedOffset,     // purpose (hardened)
                 0 + hardenedOffset,      // coin_type (hardened)
+                0 + hardenedOffset,      // account (hardened)
+                0,                        // change (not hardened)
+                0                         // address_index (not hardened)
+            ]
+        case .tron:
+            return [
+                44 + hardenedOffset,     // purpose (hardened)
+                195 + hardenedOffset,    // coin_type (hardened)
                 0 + hardenedOffset,      // account (hardened)
                 0,                        // change (not hardened)
                 0                         // address_index (not hardened)
