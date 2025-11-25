@@ -33,10 +33,16 @@ struct AccountView: View {
                         // Network selector button
                         Button(action: { showNetworkSelector = true }) {
                             HStack(spacing: 12) {
-                                // Network icon
+                                // Network icon with orange gradient
                                 ZStack {
                                     Circle()
-                                        .fill(authManager.selectedNetwork.color)
+                                        .fill(
+                                            LinearGradient(
+                                                colors: [.orange, .red],
+                                                startPoint: .topLeading,
+                                                endPoint: .bottomTrailing
+                                            )
+                                        )
                                         .frame(width: 44, height: 44)
                                     
                                     Image(systemName: authManager.selectedNetwork.iconName)
@@ -57,7 +63,7 @@ struct AccountView: View {
                                 
                                 Image(systemName: "chevron.down")
                                     .font(.caption)
-                                    .foregroundColor(.secondary)
+                                    .foregroundColor(.orange)
                             }
                             .padding(.vertical, 8)
                         }
@@ -77,14 +83,14 @@ struct AccountView: View {
                                     .multilineTextAlignment(.center)
                                     .foregroundColor(.primary)
                                 
-                                // Copy button
+                                // Copy button with orange accent
                                 Button(action: { copyAddress(address) }) {
                                     HStack(spacing: 4) {
                                         Image(systemName: "doc.on.doc")
                                         Text("Copy Address")
                                     }
                                     .font(.caption)
-                                    .foregroundColor(authManager.selectedNetwork.color)
+                                    .foregroundColor(.orange)
                                 }
                                 .buttonStyle(.plain)
                             }
@@ -92,27 +98,6 @@ struct AccountView: View {
                     }
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 16)
-                }
-                
-                // All Networks Section
-                Section {
-                    ForEach(BlockchainNetwork.allCases) { network in
-                        NetworkAddressRow(
-                            network: network,
-                            address: authManager.getAddress(for: network),
-                            isSelected: network == authManager.selectedNetwork,
-                            onSelect: {
-                                authManager.selectedNetwork = network
-                            },
-                            onCopy: { address in
-                                copyAddress(address)
-                            }
-                        )
-                    }
-                } header: {
-                    Text("All Networks")
-                } footer: {
-                    Text("Tap a network to switch. All addresses are derived from your recovery phrase.")
                 }
                 
                 // Security Section
@@ -177,7 +162,8 @@ struct AccountView: View {
                     Text("Deleting your wallet will remove all data from this device. Make sure you have backed up your recovery phrase.")
                 }
             }
-            .navigationTitle("Account")
+            .navigationTitle("Sur Keyboard")
+            .tint(.orange)
             .overlay {
                 if showCopiedToast {
                     VStack {
@@ -261,69 +247,6 @@ struct AccountView: View {
     }
 }
 
-// MARK: - Network Address Row
-
-struct NetworkAddressRow: View {
-    let network: BlockchainNetwork
-    let address: String?
-    let isSelected: Bool
-    let onSelect: () -> Void
-    let onCopy: (String) -> Void
-    
-    var body: some View {
-        Button(action: onSelect) {
-            HStack(spacing: 12) {
-                // Network icon
-                ZStack {
-                    Circle()
-                        .fill(network.color.opacity(isSelected ? 1.0 : 0.3))
-                        .frame(width: 36, height: 36)
-                    
-                    Image(systemName: network.iconName)
-                        .font(.system(size: 16))
-                        .foregroundColor(isSelected ? .white : network.color)
-                }
-                
-                VStack(alignment: .leading, spacing: 2) {
-                    HStack {
-                        Text(network.displayName)
-                            .font(.subheadline)
-                            .fontWeight(isSelected ? .semibold : .regular)
-                            .foregroundColor(.primary)
-                        
-                        if isSelected {
-                            Image(systemName: "checkmark.circle.fill")
-                                .font(.caption)
-                                .foregroundColor(.green)
-                        }
-                    }
-                    
-                    if let address = address {
-                        Text(MultiChainKeyManager.shortenAddress(address, for: network))
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                            .lineLimit(1)
-                    }
-                }
-                
-                Spacer()
-                
-                // Copy button
-                if let address = address {
-                    Button(action: { onCopy(address) }) {
-                        Image(systemName: "doc.on.doc")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-            .padding(.vertical, 4)
-        }
-        .buttonStyle(.plain)
-    }
-}
-
 // MARK: - Network Selector Sheet
 
 struct NetworkSelectorSheet: View {
@@ -339,10 +262,16 @@ struct NetworkSelectorSheet: View {
                         isPresented = false
                     }) {
                         HStack(spacing: 16) {
-                            // Network icon
+                            // Network icon with orange gradient
                             ZStack {
                                 Circle()
-                                    .fill(network.color)
+                                    .fill(
+                                        LinearGradient(
+                                            colors: [.orange, .red],
+                                            startPoint: .topLeading,
+                                            endPoint: .bottomTrailing
+                                        )
+                                    )
                                     .frame(width: 44, height: 44)
                                 
                                 Image(systemName: network.iconName)
@@ -364,7 +293,7 @@ struct NetworkSelectorSheet: View {
                             
                             if network == selectedNetwork {
                                 Image(systemName: "checkmark.circle.fill")
-                                    .foregroundColor(.green)
+                                    .foregroundColor(.orange)
                             }
                         }
                         .padding(.vertical, 8)
@@ -379,6 +308,7 @@ struct NetworkSelectorSheet: View {
                     Button("Done") {
                         isPresented = false
                     }
+                    .foregroundColor(.orange)
                 }
             }
         }
@@ -504,6 +434,7 @@ struct RecoveryPhraseSheet: View {
                         recoveryPhrase = nil
                         isPresented = false
                     }
+                    .foregroundColor(.orange)
                 }
             }
             .onDisappear {
@@ -524,6 +455,7 @@ struct KeyboardSettingsView: View {
                 Toggle(isOn: $settings.isHapticFeedbackEnabled) {
                     Label("Haptic Feedback", systemImage: "hand.tap")
                 }
+                .tint(.orange)
             } header: {
                 Text("Keyboard Settings")
             } footer: {
@@ -552,6 +484,7 @@ struct KeyboardSettingsView: View {
                             .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.borderedProminent)
+                    .tint(.orange)
                 }
                 .padding(.vertical, 8)
             } header: {
@@ -559,6 +492,7 @@ struct KeyboardSettingsView: View {
             }
         }
         .navigationTitle("Keyboard Settings")
+        .tint(.orange)
     }
     
     private func openKeyboardSettings() {
