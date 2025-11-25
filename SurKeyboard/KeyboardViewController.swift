@@ -154,6 +154,7 @@ class KeyboardViewController: UIInputViewController {
     private var keyboardView: UIView!
     private var rowStackViews: [UIStackView] = []
     private var hashLabel: UILabel!
+    private var hashBarView: UIView?  // Reference to hash bar so it persists across mode changes
     private var keyButtons: [KeyButton] = []
     
     private var currentMode: KeyboardMode = .letters
@@ -514,7 +515,7 @@ class KeyboardViewController: UIInputViewController {
         // Return key
         let returnKey = createSpecialKey(type: .returnKey, width: 88)
         returnKey.setImage(UIImage(systemName: "return"), for: .normal)
-        returnKey.backgroundColor = UIColor.systemBlue
+        returnKey.backgroundColor = UIColor.systemOrange
         returnKey.tintColor = .white
         bottomStack.addArrangedSubview(returnKey)
         keyButtons.append(returnKey)
@@ -533,9 +534,13 @@ class KeyboardViewController: UIInputViewController {
     }
     
     private func setupHashBar() {
+        // Remove existing hash bar if any
+        hashBarView?.removeFromSuperview()
+        
         let hashBar = UIView()
         hashBar.translatesAutoresizingMaskIntoConstraints = false
         keyboardView.addSubview(hashBar)
+        hashBarView = hashBar
         
         // Check icon on the left
         let checkIcon = KeyButton()
@@ -544,7 +549,7 @@ class KeyboardViewController: UIInputViewController {
         checkIcon.translatesAutoresizingMaskIntoConstraints = false
         checkIcon.addTarget(self, action: #selector(keyTouchDown(_:)), for: .touchDown)
         checkIcon.addTarget(self, action: #selector(keyTapped(_:)), for: .touchUpInside)
-        checkIcon.addTarget(self, action: #selector(keyTouchUp(_:)), for: [.touchUpOutside, .touchCancel])
+        checkIcon.addTarget(self, action: #selector(keyTouchUp(_:)), for: [.touchUpInside, .touchUpOutside, .touchCancel])
         hashBar.addSubview(checkIcon)
         keyButtons.append(checkIcon)
         
@@ -563,12 +568,11 @@ class KeyboardViewController: UIInputViewController {
         copyButton.translatesAutoresizingMaskIntoConstraints = false
         copyButton.addTarget(self, action: #selector(keyTouchDown(_:)), for: .touchDown)
         copyButton.addTarget(self, action: #selector(keyTapped(_:)), for: .touchUpInside)
-        copyButton.addTarget(self, action: #selector(keyTouchUp(_:)), for: [.touchUpOutside, .touchCancel])
+        copyButton.addTarget(self, action: #selector(keyTouchUp(_:)), for: [.touchUpInside, .touchUpOutside, .touchCancel])
         hashBar.addSubview(copyButton)
         keyButtons.append(copyButton)
         
         NSLayoutConstraint.activate([
-            hashBar.topAnchor.constraint(equalTo: rowStackViews.last!.bottomAnchor, constant: 8),
             hashBar.leadingAnchor.constraint(equalTo: keyboardView.leadingAnchor),
             hashBar.trailingAnchor.constraint(equalTo: keyboardView.trailingAnchor),
             hashBar.bottomAnchor.constraint(equalTo: keyboardView.bottomAnchor, constant: -4),
@@ -1002,12 +1006,16 @@ class KeyboardViewController: UIInputViewController {
     }
     
     private func rebuildKeyboardForMode(_ mode: KeyboardMode) {
-        // Remove existing key rows (but keep suggestions and hash bar)
+        // Remove existing key rows
         for stackView in rowStackViews {
             stackView.removeFromSuperview()
         }
         rowStackViews.removeAll()
         keyButtons.removeAll()
+        
+        // Remove hash bar (will be recreated)
+        hashBarView?.removeFromSuperview()
+        hashBarView = nil
         
         // Remove emoji picker specific views
         emojiScrollView?.removeFromSuperview()
@@ -1023,6 +1031,10 @@ class KeyboardViewController: UIInputViewController {
             setupKeyRowsForMode(mode)
             setupBottomRowForMode(mode)
         }
+        
+        // Always rebuild the hash bar
+        setupHashBar()
+        
         updateColors()
     }
     
@@ -1138,7 +1150,7 @@ class KeyboardViewController: UIInputViewController {
         // Return key
         let returnKey = createSpecialKey(type: .returnKey, width: 88)
         returnKey.setImage(UIImage(systemName: "return"), for: .normal)
-        returnKey.backgroundColor = UIColor.systemBlue
+        returnKey.backgroundColor = UIColor.systemOrange
         returnKey.tintColor = .white
         bottomStack.addArrangedSubview(returnKey)
         keyButtons.append(returnKey)
@@ -1216,7 +1228,7 @@ class KeyboardViewController: UIInputViewController {
             case .space:
                 button.backgroundColor = keyBackgroundColor
             case .returnKey:
-                button.backgroundColor = UIColor.systemBlue
+                button.backgroundColor = UIColor.systemOrange
                 button.tintColor = .white
             case .globe, .emoji, .microphone, .check, .copyHash:
                 button.backgroundColor = .clear
