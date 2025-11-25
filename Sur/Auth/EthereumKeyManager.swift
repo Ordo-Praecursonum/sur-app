@@ -155,14 +155,15 @@ final class EthereumKeyManager {
             return "0x" + cleanAddress
         }
         let hash = addressData.web3.keccak256
-        let hashHex = hash.web3.hexString.dropFirst(2) // Remove 0x prefix
+        let hashHexString = String(hash.web3.hexString.dropFirst(2)) // Remove 0x prefix
+        let hashHexArray = Array(hashHexString)
         
         // Apply checksum based on hash
         var checksummed = "0x"
         for (index, char) in cleanAddress.enumerated() {
             if char.isLetter {
-                let hashIndex = hashHex.index(hashHex.startIndex, offsetBy: index)
-                let hashChar = hashHex[hashIndex]
+                guard index < hashHexArray.count else { continue }
+                let hashChar = hashHexArray[index]
                 if let hashValue = Int(String(hashChar), radix: 16), hashValue >= 8 {
                     checksummed.append(char.uppercased())
                 } else {
@@ -394,10 +395,18 @@ final class EthereumKeyManager {
         // The raw bytes are 64 bytes (x, y coordinates)
         let publicKeyBytes = ethPrivateKey.publicKey.rawBytes
         
+        // Ensure we have the expected 64 bytes (x, y coordinates)
+        guard publicKeyBytes.count == 64 else {
+            throw EthereumKeyError.invalidPublicKey
+        }
+        
         // Compress: prefix (0x02 or 0x03 based on y parity) + x coordinate
         let xCoord = publicKeyBytes.prefix(32)
         let yCoord = publicKeyBytes.suffix(32)
-        let yIsEven = yCoord.last! & 1 == 0
+        guard let lastYByte = yCoord.last else {
+            throw EthereumKeyError.invalidPublicKey
+        }
+        let yIsEven = lastYByte & 1 == 0
         let prefix: UInt8 = yIsEven ? 0x02 : 0x03
         
         var compressed = Data([prefix])
