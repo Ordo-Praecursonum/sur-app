@@ -56,6 +56,13 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		EB576ABF2ED5ED190065B8B4 /* Exceptions for "Sur" folder in "Sur" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = EBD198532E90F8650026ED7D /* Sur */;
+		};
 		EBD1989E2E9117070026ED7D /* Exceptions for "SurKeyboard" folder in "SurKeyboard" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
@@ -68,6 +75,9 @@
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		EBD198562E90F8650026ED7D /* Sur */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				EB576ABF2ED5ED190065B8B4 /* Exceptions for "Sur" folder in "Sur" target */,
+			);
 			path = Sur;
 			sourceTree = "<group>";
 		};
