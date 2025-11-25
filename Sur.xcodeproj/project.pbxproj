@@ -178,6 +178,7 @@
 			name = Sur;
 			packageProductDependencies = (
 				EB576AC02ED5ED190065B8B4 /* web3 */,
+				EB576AC32ED5ED190065B8B4 /* secp256k1 */,
 			);
 			productName = Sur;
 			productReference = EBD198542E90F8650026ED7D /* Sur.app */;
@@ -202,6 +203,7 @@
 			name = SurTests;
 			packageProductDependencies = (
 				EB576AC12ED5ED190065B8B4 /* web3 */,
+				EB576AC42ED5ED190065B8B4 /* secp256k1 */,
 			);
 			productName = SurTests;
 			productReference = EBD198612E90F8680026ED7D /* SurTests.xctest */;
@@ -759,6 +761,14 @@
 				minimumVersion = 3.15.1;
 			};
 		};
+		EB576AC22ED5ED190065B8B4 /* XCRemoteSwiftPackageReference "secp256k1" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/GigaBitcoin/secp256k1.swift.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 0.10.0;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -771,6 +781,16 @@
 			isa = XCSwiftPackageProductDependency;
 			package = EBD198A42E911E780026ED7D /* XCRemoteSwiftPackageReference "web3" */;
 			productName = web3;
+		};
+		EB576AC32ED5ED190065B8B4 /* secp256k1 */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = EB576AC22ED5ED190065B8B4 /* XCRemoteSwiftPackageReference "secp256k1" */;
+			productName = secp256k1;
+		};
+		EB576AC42ED5ED190065B8B4 /* secp256k1 */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = EB576AC22ED5ED190065B8B4 /* XCRemoteSwiftPackageReference "secp256k1" */;
+			productName = secp256k1;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};
