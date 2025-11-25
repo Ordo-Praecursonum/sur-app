@@ -13,6 +13,7 @@ enum KeyboardMode {
     case letters
     case numbers
     case symbols
+    case emojis
 }
 
 enum ShiftState {
@@ -59,6 +60,7 @@ class KeyButton: UIButton {
         case globe
         case emoji
         case microphone
+        case letters  // Return to letters from emoji mode
     }
     
     override init(frame: CGRect) {
@@ -172,6 +174,91 @@ class KeyboardViewController: UIInputViewController {
         ["_", "\\", "|", "~", "<", ">", "€", "£", "¥", "•"],
         [".", ",", "?", "!", "'"]
     ]
+    
+    // Emoji data organized by categories (from Wikipedia List of emojis)
+    private let emojiCategories: [(name: String, icon: String, emojis: [String])] = [
+        ("Smileys", "face.smiling", [
+            "😀", "😃", "😄", "😁", "😆", "😅", "🤣", "😂", "🙂", "🙃",
+            "😉", "😊", "😇", "🥰", "😍", "🤩", "😘", "😗", "☺️", "😚",
+            "😙", "🥲", "😋", "😛", "😜", "🤪", "😝", "🤑", "🤗", "🤭",
+            "🤫", "🤔", "🤐", "🤨", "😐", "😑", "😶", "😏", "😒", "🙄",
+            "😬", "🤥", "😌", "😔", "😪", "🤤", "😴", "😷", "🤒", "🤕",
+            "🤢", "🤮", "🤧", "🥵", "🥶", "🥴", "😵", "🤯", "🤠", "🥳",
+            "🥸", "😎", "🤓", "🧐", "😕", "😟", "🙁", "☹️", "😮", "😯",
+            "😲", "😳", "🥺", "😦", "😧", "😨", "😰", "😥", "😢", "😭",
+            "😱", "😖", "😣", "😞", "😓", "😩", "😫", "🥱", "😤", "😡",
+            "😠", "🤬", "😈", "👿", "💀", "☠️", "💩", "🤡", "👹", "👺"
+        ]),
+        ("Gestures", "hand.raised", [
+            "👋", "🤚", "🖐️", "✋", "🖖", "👌", "🤌", "🤏", "✌️", "🤞",
+            "🤟", "🤘", "🤙", "👈", "👉", "👆", "🖕", "👇", "☝️", "👍",
+            "👎", "✊", "👊", "🤛", "🤜", "👏", "🙌", "👐", "🤲", "🤝",
+            "🙏", "✍️", "💅", "🤳", "💪", "🦾", "🦿", "🦵", "🦶", "👂",
+            "🦻", "👃", "🧠", "🫀", "🫁", "🦷", "🦴", "👀", "👁️", "👅",
+            "👄", "👶", "🧒", "👦", "👧", "🧑", "👱", "👨", "🧔", "👩"
+        ]),
+        ("Hearts", "heart", [
+            "❤️", "🧡", "💛", "💚", "💙", "💜", "🖤", "🤍", "🤎", "💔",
+            "❣️", "💕", "💞", "💓", "💗", "💖", "💘", "💝", "💟", "♥️",
+            "😻", "💑", "👩‍❤️‍👨", "👨‍❤️‍👨", "👩‍❤️‍👩", "💏", "👩‍❤️‍💋‍👨", "👨‍❤️‍💋‍👨", "👩‍❤️‍💋‍👩", "🫂"
+        ]),
+        ("Animals", "hare", [
+            "🐶", "🐱", "🐭", "🐹", "🐰", "🦊", "🐻", "🐼", "🐻‍❄️", "🐨",
+            "🐯", "🦁", "🐮", "🐷", "🐽", "🐸", "🐵", "🙈", "🙉", "🙊",
+            "🐒", "🐔", "🐧", "🐦", "🐤", "🐣", "🐥", "🦆", "🦅", "🦉",
+            "🦇", "🐺", "🐗", "🐴", "🦄", "🐝", "🪱", "🐛", "🦋", "🐌",
+            "🐞", "🐜", "🪰", "🪲", "🪳", "🦟", "🦗", "🕷️", "🕸️", "🦂",
+            "🐢", "🐍", "🦎", "🦖", "🦕", "🐙", "🦑", "🦐", "🦞", "🦀"
+        ]),
+        ("Food", "fork.knife", [
+            "🍎", "🍐", "🍊", "🍋", "🍌", "🍉", "🍇", "🍓", "🫐", "🍈",
+            "🍒", "🍑", "🥭", "🍍", "🥥", "🥝", "🍅", "🍆", "🥑", "🥦",
+            "🥬", "🥒", "🌶️", "🫑", "🌽", "🥕", "🫒", "🧄", "🧅", "🥔",
+            "🍠", "🥐", "🥯", "🍞", "🥖", "🥨", "🧀", "🥚", "🍳", "🧈",
+            "🥞", "🧇", "🥓", "🥩", "🍗", "🍖", "🦴", "🌭", "🍔", "🍟",
+            "🍕", "🫓", "🥪", "🥙", "🧆", "🌮", "🌯", "🫔", "🥗", "🥘"
+        ]),
+        ("Activities", "sportscourt", [
+            "⚽", "🏀", "🏈", "⚾", "🥎", "🎾", "🏐", "🏉", "🥏", "🎱",
+            "🪀", "🏓", "🏸", "🏒", "🏑", "🥍", "🏏", "🪃", "🥅", "⛳",
+            "🪁", "🏹", "🎣", "🤿", "🥊", "🥋", "🎽", "🛹", "🛼", "🛷",
+            "⛸️", "🥌", "🎿", "⛷️", "🏂", "🪂", "🏋️", "🤼", "🤸", "⛹️",
+            "🤺", "🤾", "🏌️", "🏇", "⛷️", "🏊", "🤽", "🏄", "🚣", "🧗"
+        ]),
+        ("Travel", "car", [
+            "🚗", "🚕", "🚙", "🚌", "🚎", "🏎️", "🚓", "🚑", "🚒", "🚐",
+            "🛻", "🚚", "🚛", "🚜", "🦯", "🦽", "🦼", "🛴", "🚲", "🛵",
+            "🏍️", "🛺", "🚨", "🚔", "🚍", "🚘", "🚖", "🚡", "🚠", "🚟",
+            "🚃", "🚋", "🚞", "🚝", "🚄", "🚅", "🚈", "🚂", "🚆", "🚇",
+            "🚊", "🚉", "✈️", "🛫", "🛬", "🛩️", "💺", "🛰️", "🚀", "🛸"
+        ]),
+        ("Objects", "desktopcomputer", [
+            "⌚", "📱", "📲", "💻", "⌨️", "🖥️", "🖨️", "🖱️", "🖲️", "🕹️",
+            "🗜️", "💽", "💾", "💿", "📀", "📼", "📷", "📸", "📹", "🎥",
+            "📽️", "🎞️", "📞", "☎️", "📟", "📠", "📺", "📻", "🎙️", "🎚️",
+            "🎛️", "🧭", "⏱️", "⏲️", "⏰", "🕰️", "⌛", "⏳", "📡", "🔋",
+            "🔌", "💡", "🔦", "🕯️", "🪔", "🧯", "🛢️", "💸", "💵", "💴"
+        ]),
+        ("Symbols", "star", [
+            "💯", "💢", "💥", "💫", "💦", "💨", "🕳️", "💣", "💬", "👁️‍🗨️",
+            "🗨️", "🗯️", "💭", "💤", "🔔", "🔕", "🎵", "🎶", "✅", "❌",
+            "❎", "➕", "➖", "➗", "✖️", "♾️", "💲", "💱", "™️", "©️",
+            "®️", "〰️", "➰", "➿", "🔚", "🔙", "🔛", "🔝", "🔜", "✔️",
+            "☑️", "⭐", "🌟", "✨", "⚡", "🔥", "💧", "🌊", "🎉", "🎊"
+        ]),
+        ("Flags", "flag", [
+            "🏳️", "🏴", "🏴‍☠️", "🏁", "🚩", "🎌", "🏳️‍🌈", "🏳️‍⚧️", "🇺🇳", "🇦🇫",
+            "🇦🇱", "🇩🇿", "🇦🇸", "🇦🇩", "🇦🇴", "🇦🇮", "🇦🇶", "🇦🇬", "🇦🇷", "🇦🇲",
+            "🇦🇼", "🇦🇺", "🇦🇹", "🇦🇿", "🇧🇸", "🇧🇭", "🇧🇩", "🇧🇧", "🇧🇾", "🇧🇪",
+            "🇧🇿", "🇧🇯", "🇧🇲", "🇧🇹", "🇧🇴", "🇧🇦", "🇧🇼", "🇧🇷", "🇮🇴", "🇻🇬",
+            "🇧🇳", "🇧🇬", "🇧🇫", "🇧🇮", "🇰🇭", "🇨🇲", "🇨🇦", "🇮🇨", "🇨🇻", "🇧🇶"
+        ])
+    ]
+    
+    private var emojiScrollView: UIScrollView?
+    private var emojiCategoryButtons: [UIButton] = []
+    private var currentEmojiCategoryIndex: Int = 0
+    private var emojiCategoryBar: UIStackView?
     
     private var suggestionsView: UIView!
     private var isDarkMode: Bool {
@@ -607,12 +694,17 @@ class KeyboardViewController: UIInputViewController {
             break
             
         case .emoji:
-            // Switch to emoji keyboard using the next keyboard functionality
-            advanceToNextInputMode()
+            // Show custom emoji picker
+            showEmojiPicker()
             
         case .microphone:
             // Microphone functionality - requires additional permissions
             break
+            
+        case .letters:
+            // Return to letters mode from emoji picker
+            currentMode = .letters
+            rebuildKeyboardForMode(.letters)
         }
     }
     
@@ -630,6 +722,172 @@ class KeyboardViewController: UIInputViewController {
         
         textDocumentProxy.insertText(cleanText + " ")
         triggerHapticFeedback()
+    }
+    
+    // MARK: - Emoji Picker
+    private func showEmojiPicker() {
+        currentMode = .emojis
+        rebuildKeyboardForMode(.emojis)
+    }
+    
+    private func setupEmojiPicker() {
+        // Category selector at the top
+        let categoryBar = UIStackView()
+        categoryBar.axis = .horizontal
+        categoryBar.distribution = .fillEqually
+        categoryBar.spacing = 4
+        categoryBar.translatesAutoresizingMaskIntoConstraints = false
+        keyboardView.addSubview(categoryBar)
+        emojiCategoryBar = categoryBar
+        
+        emojiCategoryButtons.removeAll()
+        for (index, category) in emojiCategories.enumerated() {
+            let button = UIButton(type: .system)
+            button.setImage(UIImage(systemName: category.icon), for: .normal)
+            button.tag = index
+            button.addTarget(self, action: #selector(emojiCategoryTapped(_:)), for: .touchUpInside)
+            categoryBar.addArrangedSubview(button)
+            emojiCategoryButtons.append(button)
+        }
+        
+        NSLayoutConstraint.activate([
+            categoryBar.topAnchor.constraint(equalTo: suggestionsView.bottomAnchor, constant: 4),
+            categoryBar.leadingAnchor.constraint(equalTo: keyboardView.leadingAnchor, constant: 8),
+            categoryBar.trailingAnchor.constraint(equalTo: keyboardView.trailingAnchor, constant: -8),
+            categoryBar.heightAnchor.constraint(equalToConstant: 36)
+        ])
+        
+        // Horizontal scroll view for emojis
+        let scrollView = UIScrollView()
+        scrollView.translatesAutoresizingMaskIntoConstraints = false
+        scrollView.showsHorizontalScrollIndicator = false
+        scrollView.showsVerticalScrollIndicator = false
+        keyboardView.addSubview(scrollView)
+        emojiScrollView = scrollView
+        
+        NSLayoutConstraint.activate([
+            scrollView.topAnchor.constraint(equalTo: categoryBar.bottomAnchor, constant: 8),
+            scrollView.leadingAnchor.constraint(equalTo: keyboardView.leadingAnchor),
+            scrollView.trailingAnchor.constraint(equalTo: keyboardView.trailingAnchor),
+            scrollView.heightAnchor.constraint(equalToConstant: 120)
+        ])
+        
+        // Load initial category
+        loadEmojiCategory(0)
+        updateEmojiCategorySelection()
+        
+        // Bottom row for emoji picker
+        setupEmojiBottomRow(topAnchor: scrollView.bottomAnchor)
+    }
+    
+    private func loadEmojiCategory(_ index: Int) {
+        guard let scrollView = emojiScrollView, index < emojiCategories.count else { return }
+        
+        currentEmojiCategoryIndex = index
+        
+        // Remove existing emoji buttons
+        for subview in scrollView.subviews {
+            subview.removeFromSuperview()
+        }
+        
+        let emojis = emojiCategories[index].emojis
+        let emojiSize: CGFloat = 40
+        let spacing: CGFloat = 8
+        let rows = 3
+        let scrollViewHeight: CGFloat = 120
+        
+        // Create emoji buttons in a grid that scrolls horizontally
+        let columns = (emojis.count + rows - 1) / rows
+        let contentWidth = CGFloat(columns) * (emojiSize + spacing) + spacing
+        
+        for (i, emoji) in emojis.enumerated() {
+            let row = i % rows
+            let col = i / rows
+            
+            let button = UIButton(type: .system)
+            button.setTitle(emoji, for: .normal)
+            button.titleLabel?.font = UIFont.systemFont(ofSize: 28)
+            button.addTarget(self, action: #selector(emojiTapped(_:)), for: .touchUpInside)
+            button.frame = CGRect(
+                x: spacing + CGFloat(col) * (emojiSize + spacing),
+                y: CGFloat(row) * (emojiSize + spacing),
+                width: emojiSize,
+                height: emojiSize
+            )
+            scrollView.addSubview(button)
+        }
+        
+        scrollView.contentSize = CGSize(width: contentWidth, height: scrollViewHeight)
+        scrollView.setContentOffset(.zero, animated: false)
+        
+        updateEmojiCategorySelection()
+    }
+    
+    @objc private func emojiCategoryTapped(_ sender: UIButton) {
+        loadEmojiCategory(sender.tag)
+        triggerHapticFeedback()
+    }
+    
+    @objc private func emojiTapped(_ sender: UIButton) {
+        guard let emoji = sender.titleLabel?.text else { return }
+        textDocumentProxy.insertText(emoji)
+        triggerHapticFeedback()
+    }
+    
+    private func updateEmojiCategorySelection() {
+        let selectedColor = isDarkMode ? UIColor.white : UIColor.systemBlue
+        let normalColor = isDarkMode ? UIColor.gray : UIColor.gray
+        
+        for (index, button) in emojiCategoryButtons.enumerated() {
+            button.tintColor = index == currentEmojiCategoryIndex ? selectedColor : normalColor
+        }
+    }
+    
+    private func setupEmojiBottomRow(topAnchor: NSLayoutYAxisAnchor) {
+        let bottomStack = UIStackView()
+        bottomStack.axis = .horizontal
+        bottomStack.distribution = .fill
+        bottomStack.spacing = 6
+        bottomStack.translatesAutoresizingMaskIntoConstraints = false
+        keyboardView.addSubview(bottomStack)
+        
+        // ABC button (return to letters)
+        let abcKey = createSpecialKey(type: .letters, width: 42)
+        abcKey.setTitle("ABC", for: .normal)
+        abcKey.titleLabel?.font = UIFont.systemFont(ofSize: 14, weight: .medium)
+        bottomStack.addArrangedSubview(abcKey)
+        keyButtons.append(abcKey)
+        
+        // Space bar (flexible width)
+        let spaceKey = createSpecialKey(type: .space, width: 0)
+        spaceKey.setTitle("", for: .normal)
+        bottomStack.addArrangedSubview(spaceKey)
+        keyButtons.append(spaceKey)
+        
+        // Delete key
+        let deleteKey = createSpecialKey(type: .delete, width: 42)
+        bottomStack.addArrangedSubview(deleteKey)
+        keyButtons.append(deleteKey)
+        
+        // Return key
+        let returnKey = createSpecialKey(type: .returnKey, width: 88)
+        returnKey.setImage(UIImage(systemName: "return"), for: .normal)
+        returnKey.backgroundColor = UIColor.systemBlue
+        returnKey.tintColor = .white
+        bottomStack.addArrangedSubview(returnKey)
+        keyButtons.append(returnKey)
+        
+        NSLayoutConstraint.activate([
+            bottomStack.topAnchor.constraint(equalTo: topAnchor, constant: 8),
+            bottomStack.leadingAnchor.constraint(equalTo: keyboardView.leadingAnchor, constant: 3),
+            bottomStack.trailingAnchor.constraint(equalTo: keyboardView.trailingAnchor, constant: -3),
+            bottomStack.heightAnchor.constraint(equalToConstant: 42),
+            abcKey.widthAnchor.constraint(equalToConstant: 42),
+            deleteKey.widthAnchor.constraint(equalToConstant: 42),
+            returnKey.widthAnchor.constraint(equalToConstant: 88)
+        ])
+        
+        rowStackViews.append(bottomStack)
     }
     
     // MARK: - Mode Handling
@@ -677,7 +935,7 @@ class KeyboardViewController: UIInputViewController {
     }
     
     private func toggleMode() {
-        if currentMode == .letters {
+        if currentMode == .letters || currentMode == .emojis {
             currentMode = .numbers
             rebuildKeyboardForMode(.numbers)
         } else {
@@ -704,9 +962,20 @@ class KeyboardViewController: UIInputViewController {
         rowStackViews.removeAll()
         keyButtons.removeAll()
         
+        // Remove emoji picker specific views
+        emojiScrollView?.removeFromSuperview()
+        emojiScrollView = nil
+        emojiCategoryBar?.removeFromSuperview()
+        emojiCategoryBar = nil
+        emojiCategoryButtons.removeAll()
+        
         // Rebuild keys based on mode
-        setupKeyRowsForMode(mode)
-        setupBottomRowForMode(mode)
+        if mode == .emojis {
+            setupEmojiPicker()
+        } else {
+            setupKeyRowsForMode(mode)
+            setupBottomRowForMode(mode)
+        }
         updateColors()
     }
     
@@ -719,6 +988,9 @@ class KeyboardViewController: UIInputViewController {
             rows = numberRows
         case .symbols:
             rows = symbolRows
+        case .emojis:
+            // Emoji mode is handled separately
+            return
         }
         
         let containerView = UIView()
@@ -785,6 +1057,11 @@ class KeyboardViewController: UIInputViewController {
     }
     
     private func setupBottomRowForMode(_ mode: KeyboardMode) {
+        // Emoji mode has its own bottom row setup
+        if mode == .emojis {
+            return
+        }
+        
         let bottomStack = UIStackView()
         bottomStack.axis = .horizontal
         bottomStack.distribution = .fill
@@ -887,7 +1164,7 @@ class KeyboardViewController: UIInputViewController {
                     button.backgroundColor = .white
                     button.tintColor = .black
                 }
-            case .delete, .numbers, .symbols:
+            case .delete, .numbers, .symbols, .letters:
                 button.backgroundColor = specialKeyBackgroundColor
             case .space:
                 button.backgroundColor = keyBackgroundColor
