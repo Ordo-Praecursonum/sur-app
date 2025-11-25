@@ -4,36 +4,28 @@
 //
 //  Manages key derivation for multiple blockchain networks using proper BIP-32/BIP-44 paths
 //
-//  IMPORTANT IMPLEMENTATION NOTES:
-//  ================================
-//  This implementation provides the correct BIP-44 derivation path structure for each
-//  supported blockchain network. However, it uses placeholder cryptographic primitives
-//  due to Swift/CryptoKit limitations:
+//  IMPLEMENTATION NOTES:
+//  =====================
+//  This implementation uses the web3.swift library for Ethereum-compatible chains:
+//  - secp256k1 curve for key generation (Ethereum, BSC, Tron, Bitcoin, Cosmos)
+//  - Keccak-256 hashing for Ethereum/BSC address derivation
 //
-//  1. CURVE: Uses P256 (NIST P-256) as a placeholder for secp256k1
-//     - Bitcoin, Ethereum, Cosmos all require secp256k1
-//     - Solana requires Ed25519
-//     - For production: Use web3.swift (secp256k1) or TweetNaCl (Ed25519)
-//
-//  2. HASHING: Uses SHA256 as a placeholder for Keccak-256
-//     - Ethereum addresses require Keccak-256 (not SHA3-256)
-//     - For production: Use web3.swift's Keccak256 implementation
-//
-//  3. ADDRESS ENCODING: Uses simplified encoding for demonstration
-//     - Bitcoin: Requires proper RIPEMD-160 (uses SHA256 twice as placeholder)
-//     - Cosmos: Requires proper Bech32 with CRC checksum (simplified here)
-//     - For production: Use dedicated encoding libraries
-//
-//  The BIP-44 DERIVATION PATHS are correct and match industry standards:
+//  The BIP-44 DERIVATION PATHS match industry standards:
 //  - Ethereum: m/44'/60'/0'/0/0  (matches MetaMask, Ledger, etc.)
 //  - Bitcoin:  m/44'/0'/0'/0/0   (BIP-44 standard)
+//  - BSC:      m/44'/60'/0'/0/0  (EVM compatible, same as Ethereum)
+//  - Tron:     m/44'/195'/0'/0/0 (Tron standard)
 //  - Cosmos:   m/44'/118'/0'/0/0 (Cosmos SDK standard)
 //  - Solana:   m/44'/501'/0'/0'  (Phantom, Solflare standard)
 //  - OriginTrail: m/44'/60'/0'/0/0 (ERC-20 token on Ethereum)
 //
+//  NOTE: Solana uses Ed25519 curve (placeholder implementation remains for now).
+//  Bitcoin and Cosmos use secp256k1 but have different address encodings.
+//
 
 import Foundation
 import CryptoKit
+import web3
 
 /// Error types for multi-chain key operations
 enum MultiChainKeyError: LocalizedError {
@@ -251,16 +243,20 @@ final class MultiChainKeyManager {
         return (childKey, childChainCode)
     }
     
-    /// Add two private keys together (mod curve order)
-    /// This is a simplified implementation
+    /// secp256k1 curve order (n) for modular arithmetic
+    private static let curveOrder: [UInt8] = [
+        0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+        0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFE,
+        0xBA, 0xAE, 0xDC, 0xE6, 0xAF, 0x48, 0xA0, 0x3B,
+        0xBF, 0xD2, 0x5E, 0x8C, 0xD0, 0x36, 0x41, 0x41
+    ]
+    
+    /// Add two private keys together (mod secp256k1 curve order)
     private static func addPrivateKeys(_ key1: Data, _ key2: Data) throws -> Data {
         guard key1.count == 32 && key2.count == 32 else {
             throw MultiChainKeyError.invalidPrivateKey
         }
         
-        // Convert to big integers and add
-        // For simplicity, we'll use a basic byte-by-byte addition with carry
-        // In production, use proper big integer arithmetic with modulo curve order
         var result = [UInt8](repeating: 0, count: 32)
         var carry: UInt16 = 0
         
@@ -273,6 +269,43 @@ final class MultiChainKeyManager {
             carry = sum >> 8
         }
         
+        // Reduce modulo curve order if needed
+        var resultData = Data(result)
+        if compareWithCurveOrder(resultData) >= 0 {
+            resultData = subtractCurveOrder(from: resultData)
+        }
+        
+        return resultData
+    }
+    
+    /// Compare data with secp256k1 curve order
+    private static func compareWithCurveOrder(_ data: Data) -> Int {
+        let bytes = [UInt8](data)
+        for i in 0..<32 {
+            if bytes[i] < curveOrder[i] { return -1 }
+            if bytes[i] > curveOrder[i] { return 1 }
+        }
+        return 0
+    }
+    
+    /// Subtract curve order from data (for modular reduction)
+    private static func subtractCurveOrder(from data: Data) -> Data {
+        var result = [UInt8](repeating: 0, count: 32)
+        var borrow: Int16 = 0
+        
+        let bytes = [UInt8](data)
+        
+        for i in (0..<32).reversed() {
+            let diff = Int16(bytes[i]) - Int16(curveOrder[i]) - borrow
+            if diff < 0 {
+                result[i] = UInt8((diff + 256) & 0xFF)
+                borrow = 1
+            } else {
+                result[i] = UInt8(diff & 0xFF)
+                borrow = 0
+            }
+        }
+        
         return Data(result)
     }
     
@@ -282,21 +315,38 @@ final class MultiChainKeyManager {
         
         // Key must not be zero
         let isZero = key.allSatisfy { $0 == 0 }
-        return !isZero
+        guard !isZero else { return false }
+        
+        // Key must be less than curve order
+        return compareWithCurveOrder(key) < 0
     }
     
-    /// Generate compressed public key bytes (33 bytes)
-    /// Simplified implementation - production should use secp256k1
+    /// Generate compressed secp256k1 public key bytes (33 bytes) using web3.swift
+    ///
+    /// This method uses proper secp256k1 operations for MetaMask compatibility.
+    ///
+    /// - Parameter privateKey: 32-byte private key
+    /// - Returns: 33-byte compressed public key
     private static func generatePublicKeyBytes(from privateKey: Data) throws -> Data {
-        // This is a placeholder using CryptoKit's P256
-        // Production should use secp256k1 from web3.swift
-        guard let p256Key = try? P256.Signing.PrivateKey(rawRepresentation: privateKey) else {
+        // Use web3.swift for proper secp256k1 public key generation
+        guard let hexPrivateKey = privateKey.web3.hexString.web3.noHexPrefix as String?,
+              let ethPrivateKey = try? EthereumPrivateKey(hexPrivateKey: hexPrivateKey) else {
             throw MultiChainKeyError.invalidPrivateKey
         }
         
-        // Get compressed public key representation (33 bytes)
-        let publicKey = p256Key.publicKey.compressedRepresentation
-        return publicKey
+        // Get the public key bytes (64 bytes: x, y coordinates)
+        let publicKeyBytes = ethPrivateKey.publicKey.rawBytes
+        
+        // Compress: prefix (0x02 or 0x03 based on y parity) + x coordinate
+        let xCoord = publicKeyBytes.prefix(32)
+        let yCoord = publicKeyBytes.suffix(32)
+        let yIsEven = yCoord.last! & 1 == 0
+        let prefix: UInt8 = yIsEven ? 0x02 : 0x03
+        
+        var compressed = Data([prefix])
+        compressed.append(contentsOf: xCoord)
+        
+        return compressed
     }
     
     // MARK: - Address Generation
@@ -317,42 +367,46 @@ final class MultiChainKeyManager {
         }
     }
     
-    /// Generate Ethereum address from private key
-    /// Note: Uses SHA256 as placeholder for Keccak-256
-    /// Production should use web3.swift for proper Keccak-256 and secp256k1
+    /// Generate Ethereum address from private key using secp256k1 and Keccak-256
+    ///
+    /// This implementation uses web3.swift for proper MetaMask-compatible address generation:
+    /// - secp256k1 curve for public key derivation
+    /// - Keccak-256 hashing (not SHA256) for address generation
+    ///
+    /// - Parameter privateKey: 32-byte private key
+    /// - Returns: EIP-55 checksummed Ethereum address
     private static func generateEthereumAddress(from privateKey: Data) throws -> String {
-        // Generate public key
-        guard let p256Key = try? P256.Signing.PrivateKey(rawRepresentation: privateKey) else {
+        // Generate secp256k1 public key using web3.swift
+        guard let hexPrivateKey = privateKey.web3.hexString.web3.noHexPrefix as String?,
+              let ethPrivateKey = try? EthereumPrivateKey(hexPrivateKey: hexPrivateKey) else {
             throw MultiChainKeyError.invalidPrivateKey
         }
         
-        let publicKey = p256Key.publicKey.rawRepresentation
+        // Get uncompressed public key (64 bytes)
+        let publicKey = Data(ethPrivateKey.publicKey.rawBytes)
         
-        // Hash public key (SHA256 as placeholder for Keccak-256)
-        // Production: Use Keccak-256 from web3.swift
-        let hash = SHA256.hash(data: publicKey)
-        let hashData = Data(hash)
+        // Keccak-256 hash of the public key via web3.swift
+        let hash = publicKey.web3.keccak256
         
         // Take last 20 bytes
-        let addressBytes = hashData.suffix(20)
+        let addressBytes = hash.suffix(20)
         
-        // Convert to hex with checksum
+        // Convert to hex string
         let addressHex = addressBytes.map { String(format: "%02x", $0) }.joined()
         
         return checksumEthereumAddress(addressHex)
     }
     
     /// Generate Bitcoin address from private key (P2PKH format)
-    /// Simplified implementation
+    ///
+    /// NOTE: Bitcoin address generation still uses SHA256 twice as a placeholder
+    /// for RIPEMD-160. For full Bitcoin compatibility, a RIPEMD-160 library is needed.
     private static func generateBitcoinAddress(from privateKey: Data) throws -> String {
-        // Generate public key
-        guard let p256Key = try? P256.Signing.PrivateKey(rawRepresentation: privateKey) else {
-            throw MultiChainKeyError.invalidPrivateKey
-        }
+        // Generate compressed secp256k1 public key using web3.swift
+        let publicKey = try generatePublicKeyBytes(from: privateKey)
         
-        let publicKey = p256Key.publicKey.compressedRepresentation
-        
-        // SHA256 then RIPEMD160 (using SHA256 twice as placeholder)
+        // SHA256 then RIPEMD160 (using SHA256 twice as placeholder for RIPEMD160)
+        // NOTE: For proper Bitcoin addresses, use a RIPEMD-160 library
         let sha256Hash = SHA256.hash(data: publicKey)
         let hash160 = SHA256.hash(data: Data(sha256Hash)).prefix(20)
         
@@ -370,16 +424,16 @@ final class MultiChainKeyManager {
     }
     
     /// Generate Cosmos address from private key
-    /// Simplified implementation
+    ///
+    /// Uses secp256k1 public key via web3.swift.
+    /// NOTE: RIPEMD-160 is approximated with SHA256 - for full Cosmos compatibility,
+    /// a RIPEMD-160 library should be used.
     private static func generateCosmosAddress(from privateKey: Data) throws -> String {
-        // Generate public key
-        guard let p256Key = try? P256.Signing.PrivateKey(rawRepresentation: privateKey) else {
-            throw MultiChainKeyError.invalidPrivateKey
-        }
+        // Generate compressed secp256k1 public key using web3.swift
+        let publicKey = try generatePublicKeyBytes(from: privateKey)
         
-        let publicKey = p256Key.publicKey.compressedRepresentation
-        
-        // SHA256 then RIPEMD160 (using SHA256 twice as placeholder)
+        // SHA256 then RIPEMD160 (using SHA256 twice as placeholder for RIPEMD160)
+        // NOTE: For proper Cosmos addresses, use a RIPEMD-160 library
         let sha256Hash = SHA256.hash(data: publicKey)
         let hash160 = Data(SHA256.hash(data: Data(sha256Hash))).prefix(20)
         
@@ -388,36 +442,47 @@ final class MultiChainKeyManager {
     }
     
     /// Generate Solana address from private key
-    /// Solana uses Ed25519, this is a placeholder using the available curves
+    ///
+    /// NOTE: Solana uses Ed25519, not secp256k1. This is a placeholder implementation.
+    /// For proper Solana addresses, an Ed25519 library should be used.
     private static func generateSolanaAddress(from privateKey: Data) throws -> String {
         // Solana uses Ed25519, the public key IS the address
-        // This is a placeholder - production should use Ed25519
-        guard let p256Key = try? P256.Signing.PrivateKey(rawRepresentation: privateKey) else {
+        // This is a placeholder - production should use Ed25519 (e.g., TweetNaCl)
+        // Using secp256k1 public key as placeholder
+        guard let hexPrivateKey = privateKey.web3.hexString.web3.noHexPrefix as String?,
+              let ethPrivateKey = try? EthereumPrivateKey(hexPrivateKey: hexPrivateKey) else {
             throw MultiChainKeyError.invalidPrivateKey
         }
         
-        let publicKey = p256Key.publicKey.rawRepresentation
+        // Use raw public key bytes (64 bytes) - NOTE: Solana would use 32-byte Ed25519 pubkey
+        let publicKey = Data(ethPrivateKey.publicKey.rawBytes.prefix(32))
         
         // Base58 encode (Solana addresses are base58 encoded public keys)
         return base58Encode(publicKey)
     }
     
-    /// Generate Tron address from private key
-    /// Tron uses the same key derivation as Ethereum but with base58check encoding
+    /// Generate Tron address from private key using secp256k1 and Keccak-256
+    ///
+    /// Tron uses the same key derivation as Ethereum (secp256k1 + Keccak-256)
+    /// but encodes the address with base58check instead of hex.
+    ///
+    /// - Parameter privateKey: 32-byte private key
+    /// - Returns: Tron address starting with 'T'
     private static func generateTronAddress(from privateKey: Data) throws -> String {
-        // Generate public key
-        guard let p256Key = try? P256.Signing.PrivateKey(rawRepresentation: privateKey) else {
+        // Generate secp256k1 public key using web3.swift
+        guard let hexPrivateKey = privateKey.web3.hexString.web3.noHexPrefix as String?,
+              let ethPrivateKey = try? EthereumPrivateKey(hexPrivateKey: hexPrivateKey) else {
             throw MultiChainKeyError.invalidPrivateKey
         }
         
-        let publicKey = p256Key.publicKey.rawRepresentation
+        // Get uncompressed public key (64 bytes)
+        let publicKey = Data(ethPrivateKey.publicKey.rawBytes)
         
-        // Hash public key (SHA256 as placeholder for Keccak-256)
-        let hash = SHA256.hash(data: publicKey)
-        let hashData = Data(hash)
+        // Keccak-256 hash of the public key
+        let hash = publicKey.web3.keccak256
         
         // Take last 20 bytes (same as Ethereum)
-        let addressBytes = hashData.suffix(20)
+        let addressBytes = hash.suffix(20)
         
         // Add Tron version byte (0x41 for mainnet)
         var addressData = Data([0x41])
@@ -434,19 +499,24 @@ final class MultiChainKeyManager {
     
     // MARK: - Encoding Helpers
     
-    /// Apply EIP-55 checksum to Ethereum address
+    /// Apply EIP-55 checksum to Ethereum address using Keccak-256
+    ///
+    /// This implementation uses web3.swift's Keccak-256 for proper EIP-55 compliance.
     private static func checksumEthereumAddress(_ address: String) -> String {
         let cleanAddress = address.lowercased()
         
-        // Hash the address (using SHA256 as placeholder for Keccak-256)
-        let addressData = cleanAddress.data(using: .utf8)!
-        let hash = SHA256.hash(data: addressData)
-        let hashHex = hash.compactMap { String(format: "%02x", $0) }.joined()
+        // Hash the address using Keccak-256 (EIP-55 standard)
+        guard let addressData = cleanAddress.data(using: .utf8) else {
+            return "0x" + cleanAddress
+        }
+        let hash = addressData.web3.keccak256
+        let hashHex = hash.web3.hexString.dropFirst(2) // Remove 0x prefix
         
         var checksummed = "0x"
         for (index, char) in cleanAddress.enumerated() {
             if char.isLetter {
-                let hashChar = hashHex[hashHex.index(hashHex.startIndex, offsetBy: index)]
+                let hashIndex = hashHex.index(hashHex.startIndex, offsetBy: index)
+                let hashChar = hashHex[hashIndex]
                 if let hashValue = Int(String(hashChar), radix: 16), hashValue >= 8 {
                     checksummed.append(char.uppercased())
                 } else {
