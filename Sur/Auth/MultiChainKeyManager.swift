@@ -4,6 +4,33 @@
 //
 //  Manages key derivation for multiple blockchain networks using proper BIP-32/BIP-44 paths
 //
+//  IMPORTANT IMPLEMENTATION NOTES:
+//  ================================
+//  This implementation provides the correct BIP-44 derivation path structure for each
+//  supported blockchain network. However, it uses placeholder cryptographic primitives
+//  due to Swift/CryptoKit limitations:
+//
+//  1. CURVE: Uses P256 (NIST P-256) as a placeholder for secp256k1
+//     - Bitcoin, Ethereum, Cosmos all require secp256k1
+//     - Solana requires Ed25519
+//     - For production: Use web3.swift (secp256k1) or TweetNaCl (Ed25519)
+//
+//  2. HASHING: Uses SHA256 as a placeholder for Keccak-256
+//     - Ethereum addresses require Keccak-256 (not SHA3-256)
+//     - For production: Use web3.swift's Keccak256 implementation
+//
+//  3. ADDRESS ENCODING: Uses simplified encoding for demonstration
+//     - Bitcoin: Requires proper RIPEMD-160 (uses SHA256 twice as placeholder)
+//     - Cosmos: Requires proper Bech32 with CRC checksum (simplified here)
+//     - For production: Use dedicated encoding libraries
+//
+//  The BIP-44 DERIVATION PATHS are correct and match industry standards:
+//  - Ethereum: m/44'/60'/0'/0/0  (matches MetaMask, Ledger, etc.)
+//  - Bitcoin:  m/44'/0'/0'/0/0   (BIP-44 standard)
+//  - Cosmos:   m/44'/118'/0'/0/0 (Cosmos SDK standard)
+//  - Solana:   m/44'/501'/0'/0'  (Phantom, Solflare standard)
+//  - OriginTrail: m/44'/60'/0'/0/0 (ERC-20 token on Ethereum)
+//
 
 import Foundation
 import CryptoKit
