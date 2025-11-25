@@ -61,6 +61,8 @@ class KeyButton: UIButton {
         case emoji
         case microphone
         case letters  // Return to letters from emoji mode
+        case check    // Check icon on hash bar
+        case copyHash // Copy hash button
     }
     
     override init(frame: CGRect) {
@@ -531,16 +533,16 @@ class KeyboardViewController: UIInputViewController {
         hashBar.translatesAutoresizingMaskIntoConstraints = false
         keyboardView.addSubview(hashBar)
         
-        // Emoji icon on the left (for display, emoji button is in bottom row)
-        let emojiIcon = KeyButton()
-        emojiIcon.keyType = .emoji
-        emojiIcon.setImage(UIImage(systemName: "face.smiling"), for: .normal)
-        emojiIcon.translatesAutoresizingMaskIntoConstraints = false
-        emojiIcon.addTarget(self, action: #selector(keyTouchDown(_:)), for: .touchDown)
-        emojiIcon.addTarget(self, action: #selector(keyTapped(_:)), for: .touchUpInside)
-        emojiIcon.addTarget(self, action: #selector(keyTouchUp(_:)), for: [.touchUpOutside, .touchCancel])
-        hashBar.addSubview(emojiIcon)
-        keyButtons.append(emojiIcon)
+        // Check icon on the left
+        let checkIcon = KeyButton()
+        checkIcon.keyType = .check
+        checkIcon.setImage(UIImage(systemName: "checkmark"), for: .normal)
+        checkIcon.translatesAutoresizingMaskIntoConstraints = false
+        checkIcon.addTarget(self, action: #selector(keyTouchDown(_:)), for: .touchDown)
+        checkIcon.addTarget(self, action: #selector(keyTapped(_:)), for: .touchUpInside)
+        checkIcon.addTarget(self, action: #selector(keyTouchUp(_:)), for: [.touchUpOutside, .touchCancel])
+        hashBar.addSubview(checkIcon)
+        keyButtons.append(checkIcon)
         
         // Hash label
         hashLabel = UILabel()
@@ -550,16 +552,16 @@ class KeyboardViewController: UIInputViewController {
         hashLabel.translatesAutoresizingMaskIntoConstraints = false
         hashBar.addSubview(hashLabel)
         
-        // Microphone button
-        let micButton = KeyButton()
-        micButton.keyType = .microphone
-        micButton.setImage(UIImage(systemName: "mic.fill"), for: .normal)
-        micButton.translatesAutoresizingMaskIntoConstraints = false
-        micButton.addTarget(self, action: #selector(keyTouchDown(_:)), for: .touchDown)
-        micButton.addTarget(self, action: #selector(keyTapped(_:)), for: .touchUpInside)
-        micButton.addTarget(self, action: #selector(keyTouchUp(_:)), for: [.touchUpOutside, .touchCancel])
-        hashBar.addSubview(micButton)
-        keyButtons.append(micButton)
+        // Copy button (copies the hash)
+        let copyButton = KeyButton()
+        copyButton.keyType = .copyHash
+        copyButton.setImage(UIImage(systemName: "doc.on.doc"), for: .normal)
+        copyButton.translatesAutoresizingMaskIntoConstraints = false
+        copyButton.addTarget(self, action: #selector(keyTouchDown(_:)), for: .touchDown)
+        copyButton.addTarget(self, action: #selector(keyTapped(_:)), for: .touchUpInside)
+        copyButton.addTarget(self, action: #selector(keyTouchUp(_:)), for: [.touchUpOutside, .touchCancel])
+        hashBar.addSubview(copyButton)
+        keyButtons.append(copyButton)
         
         NSLayoutConstraint.activate([
             hashBar.topAnchor.constraint(equalTo: rowStackViews.last!.bottomAnchor, constant: 8),
@@ -568,18 +570,18 @@ class KeyboardViewController: UIInputViewController {
             hashBar.bottomAnchor.constraint(equalTo: keyboardView.bottomAnchor, constant: -4),
             hashBar.heightAnchor.constraint(equalToConstant: 36),
             
-            emojiIcon.leadingAnchor.constraint(equalTo: hashBar.leadingAnchor, constant: 16),
-            emojiIcon.centerYAnchor.constraint(equalTo: hashBar.centerYAnchor),
-            emojiIcon.widthAnchor.constraint(equalToConstant: 36),
-            emojiIcon.heightAnchor.constraint(equalToConstant: 36),
+            checkIcon.leadingAnchor.constraint(equalTo: hashBar.leadingAnchor, constant: 16),
+            checkIcon.centerYAnchor.constraint(equalTo: hashBar.centerYAnchor),
+            checkIcon.widthAnchor.constraint(equalToConstant: 36),
+            checkIcon.heightAnchor.constraint(equalToConstant: 36),
             
             hashLabel.centerXAnchor.constraint(equalTo: hashBar.centerXAnchor),
             hashLabel.centerYAnchor.constraint(equalTo: hashBar.centerYAnchor),
             
-            micButton.trailingAnchor.constraint(equalTo: hashBar.trailingAnchor, constant: -16),
-            micButton.centerYAnchor.constraint(equalTo: hashBar.centerYAnchor),
-            micButton.widthAnchor.constraint(equalToConstant: 36),
-            micButton.heightAnchor.constraint(equalToConstant: 36)
+            copyButton.trailingAnchor.constraint(equalTo: hashBar.trailingAnchor, constant: -16),
+            copyButton.centerYAnchor.constraint(equalTo: hashBar.centerYAnchor),
+            copyButton.widthAnchor.constraint(equalToConstant: 36),
+            copyButton.heightAnchor.constraint(equalToConstant: 36)
         ])
     }
     
@@ -705,6 +707,28 @@ class KeyboardViewController: UIInputViewController {
             // Return to letters mode from emoji picker
             currentMode = .letters
             rebuildKeyboardForMode(.letters)
+            
+        case .check:
+            // Check button - can be customized for specific functionality
+            break
+            
+        case .copyHash:
+            // Copy the hash to clipboard
+            copyHashToClipboard()
+        }
+    }
+    
+    // MARK: - Copy Hash
+    private func copyHashToClipboard() {
+        let hashText = hashLabel?.text ?? "#0x4D4...734"
+        UIPasteboard.general.string = hashText
+        triggerHapticFeedback()
+        
+        // Brief visual feedback - flash the label
+        let originalColor = hashLabel?.textColor
+        hashLabel?.textColor = .systemGreen
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+            self?.hashLabel?.textColor = originalColor
         }
     }
     
@@ -1155,7 +1179,7 @@ class KeyboardViewController: UIInputViewController {
             case .returnKey:
                 button.backgroundColor = UIColor.systemBlue
                 button.tintColor = .white
-            case .globe, .emoji, .microphone:
+            case .globe, .emoji, .microphone, .check, .copyHash:
                 button.backgroundColor = .clear
             }
         }
