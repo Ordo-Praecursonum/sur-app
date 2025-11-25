@@ -177,7 +177,7 @@
 			);
 			name = Sur;
 			packageProductDependencies = (
-				EB576AC02ED5ED190065B8B4 /* web3.swift */,
+				EB576AC02ED5ED190065B8B4 /* web3 */,
 			);
 			productName = Sur;
 			productReference = EBD198542E90F8650026ED7D /* Sur.app */;
@@ -201,7 +201,7 @@
 			);
 			name = SurTests;
 			packageProductDependencies = (
-				EB576AC12ED5ED190065B8B4 /* web3.swift */,
+				EB576AC12ED5ED190065B8B4 /* web3 */,
 			);
 			productName = SurTests;
 			productReference = EBD198612E90F8680026ED7D /* SurTests.xctest */;
@@ -762,15 +762,15 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
-		EB576AC02ED5ED190065B8B4 /* web3.swift */ = {
+		EB576AC02ED5ED190065B8B4 /* web3 */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = EBD198A42E911E780026ED7D /* XCRemoteSwiftPackageReference "web3" */;
-			productName = web3.swift;
+			productName = web3;
 		};
-		EB576AC12ED5ED190065B8B4 /* web3.swift */ = {
+		EB576AC12ED5ED190065B8B4 /* web3 */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = EBD198A42E911E780026ED7D /* XCRemoteSwiftPackageReference "web3" */;
-			productName = web3.swift;
+			productName = web3;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};
