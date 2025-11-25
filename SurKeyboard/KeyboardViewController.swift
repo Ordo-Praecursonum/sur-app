@@ -636,7 +636,7 @@ class KeyboardViewController: UIInputViewController {
         
         keyButton.addTarget(self, action: #selector(keyTouchDown(_:)), for: .touchDown)
         keyButton.addTarget(self, action: #selector(keyTapped(_:)), for: .touchUpInside)
-        keyButton.addTarget(self, action: #selector(keyTouchUp(_:)), for: [.touchUpOutside, .touchCancel])
+        keyButton.addTarget(self, action: #selector(keyTouchUp(_:)), for: [.touchUpInside, .touchUpOutside, .touchCancel])
         
         return keyButton
     }
@@ -715,6 +715,7 @@ class KeyboardViewController: UIInputViewController {
             handleShiftTap()
             
         case .delete:
+            stopDeleteTimer()
             textDocumentProxy.deleteBackward()
             
         case .numbers:
