@@ -322,7 +322,7 @@ class KeyboardViewController: UIInputViewController {
     // MARK: - Setup
     private func setupKeyboardView() {
         // Set a fixed height for the keyboard to ensure all elements are visible
-        let keyboardHeight: CGFloat = 260
+        let keyboardHeight: CGFloat = 300
         
         keyboardView = UIView()
         keyboardView.translatesAutoresizingMaskIntoConstraints = false
@@ -573,19 +573,11 @@ class KeyboardViewController: UIInputViewController {
         hashBar.addSubview(copyButton)
         keyButtons.append(copyButton)
         
-        // Find the bottom row to anchor hash bar below it
-        // The bottom row is the last element in rowStackViews with tag 999, or just the last one
-        let bottomRowAnchor: NSLayoutYAxisAnchor
-        if let bottomRow = rowStackViews.last {
-            bottomRowAnchor = bottomRow.bottomAnchor
-        } else {
-            bottomRowAnchor = suggestionsView.bottomAnchor
-        }
-        
+        // Anchor hash bar to bottom of keyboardView always
         NSLayoutConstraint.activate([
             hashBar.leadingAnchor.constraint(equalTo: keyboardView.leadingAnchor),
             hashBar.trailingAnchor.constraint(equalTo: keyboardView.trailingAnchor),
-            hashBar.topAnchor.constraint(equalTo: bottomRowAnchor, constant: 4),
+            hashBar.bottomAnchor.constraint(equalTo: keyboardView.bottomAnchor, constant: -4),
             hashBar.heightAnchor.constraint(equalToConstant: 36),
             
             checkIcon.leadingAnchor.constraint(equalTo: hashBar.leadingAnchor, constant: 16),
