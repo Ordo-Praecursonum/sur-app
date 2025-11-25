@@ -4,6 +4,11 @@
 //
 //  Manages Ethereum key derivation and address generation
 //
+//  Note: This implementation provides a basic framework for Ethereum key generation.
+//  For production use with the Ethereum network, the web3.swift package (already
+//  configured in this project) should be used for proper secp256k1 curve operations
+//  and Keccak-256 hashing.
+//
 
 import Foundation
 import CryptoKit
@@ -33,6 +38,11 @@ enum EthereumKeyError: LocalizedError {
 }
 
 /// Manages Ethereum key derivation following BIP-32/BIP-44 standards
+///
+/// IMPORTANT: This implementation uses SHA256 as a placeholder for Keccak-256
+/// and P256 curve as a placeholder for secp256k1 for demonstration purposes.
+/// For production Ethereum compatibility, integrate with web3.swift which provides
+/// proper secp256k1 and Keccak-256 support.
 final class EthereumKeyManager {
     
     // MARK: - Constants
@@ -74,16 +84,20 @@ final class EthereumKeyManager {
     }
     
     /// Generate Ethereum public address from private key
+    ///
+    /// Note: This uses a placeholder algorithm. For production Ethereum compatibility,
+    /// use web3.swift's secp256k1 implementation and Keccak-256 hashing.
+    ///
     /// - Parameter privateKey: 32-byte private key
-    /// - Returns: Ethereum address string (with 0x prefix)
+    /// - Returns: Ethereum-style address string (with 0x prefix)
     static func generateAddress(from privateKey: Data) throws -> String {
         guard privateKey.count == 32 else {
             throw EthereumKeyError.invalidPrivateKey
         }
         
         // Generate public key from private key
-        // Note: This is a simplified implementation
-        // In production, use proper secp256k1 library (like web3.swift)
+        // Note: This is a simplified implementation using available CryptoKit
+        // Production should use secp256k1 curve via web3.swift
         let publicKey = try generatePublicKey(from: privateKey)
         
         // Generate address from public key
@@ -108,15 +122,20 @@ final class EthereumKeyManager {
         return (privateKey, address)
     }
     
-    /// Format Ethereum address with checksum (EIP-55)
+    /// Format Ethereum address with checksum (EIP-55 style)
+    ///
+    /// Note: Uses SHA256 as a placeholder for Keccak-256.
+    /// For EIP-55 compliant checksums, use Keccak-256 via web3.swift.
+    ///
     /// - Parameter address: Lowercase address without 0x prefix
     /// - Returns: Checksummed address with 0x prefix
     static func checksumAddress(_ address: String) -> String {
-        let cleanAddress = address.lowercased().hasPrefix("0x") 
-            ? String(address.dropFirst(2)).lowercased() 
+        let cleanAddress = address.lowercased().hasPrefix("0x")
+            ? String(address.dropFirst(2)).lowercased()
             : address.lowercased()
         
-        // Hash the address
+        // Hash the address (SHA256 used as placeholder for Keccak-256)
+        // Production should use Keccak-256 for EIP-55 compliance
         let addressData = cleanAddress.data(using: .utf8)!
         let hash = SHA256.hash(data: addressData)
         let hashHex = hash.compactMap { String(format: "%02x", $0) }.joined()
@@ -188,14 +207,16 @@ final class EthereumKeyManager {
     }
     
     /// Generate public key from private key
-    /// This is a simplified implementation - in production, use proper secp256k1 library
+    ///
+    /// Note: Uses P256 (NIST P-256) curve as a placeholder for secp256k1.
+    /// Ethereum uses secp256k1 curve. For production compatibility,
+    /// use web3.swift's secp256k1 implementation.
+    ///
+    /// - Parameter privateKey: 32-byte private key
+    /// - Returns: Public key bytes
     private static func generatePublicKey(from privateKey: Data) throws -> Data {
-        // For a production implementation, use web3.swift or similar library
-        // that provides proper secp256k1 support
-        
-        // Create a P256 private key for demonstration
-        // Note: Ethereum uses secp256k1, not P256
-        // This should be replaced with actual secp256k1 implementation
+        // For production Ethereum compatibility, use web3.swift secp256k1 implementation
+        // This P256 implementation is a placeholder demonstration
         guard let p256PrivateKey = try? P256.Signing.PrivateKey(rawRepresentation: privateKey) else {
             throw EthereumKeyError.invalidPrivateKey
         }
@@ -205,13 +226,20 @@ final class EthereumKeyManager {
         return publicKey
     }
     
-    /// Generate Ethereum address from public key
+    /// Generate Ethereum-style address from public key
+    ///
+    /// Note: Uses SHA256 as a placeholder for Keccak-256.
+    /// Ethereum addresses use Keccak-256. For production,
+    /// use web3.swift's Keccak-256 implementation.
+    ///
+    /// - Parameter publicKey: Public key bytes
+    /// - Returns: Ethereum-style address with checksum
     private static func generateAddressFromPublicKey(_ publicKey: Data) throws -> String {
-        // Keccak-256 hash of the public key (excluding the 04 prefix for uncompressed keys)
+        // Hash of the public key (excluding the 04 prefix for uncompressed keys)
         let publicKeyToHash = publicKey.count == 65 ? publicKey.dropFirst() : publicKey
         
-        // Use SHA256 as a stand-in for Keccak-256
-        // In production, use proper Keccak-256 implementation
+        // SHA256 used as placeholder for Keccak-256
+        // Production should use Keccak-256 for proper Ethereum addresses
         let hash = SHA256.hash(data: publicKeyToHash)
         let hashData = Data(hash)
         
