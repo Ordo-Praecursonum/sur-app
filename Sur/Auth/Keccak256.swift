@@ -24,7 +24,7 @@ final class Keccak256 {
     /// State size in 64-bit words (5x5 = 25)
     private static let stateSize = 25
     
-    /// Rate in bytes for Keccak-256 (1088 bits = 136 bytes)
+    /// Rate in bytes for Keccak-256 (1600 - 512 = 1088 bits = 136 bytes)
     private static let rate = 136
     
     /// Output length in bytes for Keccak-256 (256 bits = 32 bytes)
@@ -40,13 +40,13 @@ final class Keccak256 {
         0x8000000080008081, 0x8000000000008080, 0x0000000080000001, 0x8000000080008008
     ]
     
-    /// Rotation offsets for rho step
-    private static let rotationOffsets: [[Int]] = [
-        [0, 36, 3, 41, 18],
-        [1, 44, 10, 45, 2],
-        [62, 6, 43, 15, 61],
-        [28, 55, 25, 21, 56],
-        [27, 20, 39, 8, 14]
+    /// Rotation offsets for rho step (linearized 5x5 array)
+    private static let rotationOffsets: [Int] = [
+        0,  1, 62, 28, 27,
+        36, 44,  6, 55, 20,
+        3, 10, 43, 25, 39,
+        41, 45, 15, 21,  8,
+        18,  2, 61, 56, 14
     ]
     
     // MARK: - Public Interface
@@ -56,21 +56,22 @@ final class Keccak256 {
     /// - Returns: 32-byte Keccak-256 hash
     static func hash(_ data: Data) -> Data {
         var state = [UInt64](repeating: 0, count: stateSize)
-        
-        // Absorb phase
         var input = [UInt8](data)
         
-        // Pad the message with Keccak padding (0x01...0x80)
-        // Note: Ethereum uses Keccak (0x01), not SHA3 (0x06)
+        // Keccak padding: append domain separator 0x01, then pad with zeros, XOR 0x80 at end
+        // Note: Keccak uses 0x01, SHA3 uses 0x06
         input.append(0x01)
-        while (input.count % rate) != (rate - 1) {
+        while (input.count % rate) != 0 {
             input.append(0x00)
         }
-        input.append(0x80)
+        // XOR 0x80 into the last byte to complete padding
+        if input.count > 0 {
+            input[input.count - 1] ^= 0x80
+        }
         
-        // Process each block
+        // Absorb phase - process each block
         for blockStart in stride(from: 0, to: input.count, by: rate) {
-            // XOR block into state
+            // XOR block into state (little-endian conversion)
             for i in 0..<(rate / 8) {
                 let offset = blockStart + i * 8
                 if offset + 8 <= input.count {
@@ -82,11 +83,11 @@ final class Keccak256 {
                 }
             }
             
-            // Apply Keccak-f[1600]
+            // Apply Keccak-f[1600] permutation
             keccakF1600(&state)
         }
         
-        // Squeeze phase - extract output
+        // Squeeze phase - extract output (little-endian conversion)
         var output = Data()
         for i in 0..<(outputLength / 8) {
             var word = state[i]
@@ -109,41 +110,39 @@ final class Keccak256 {
     
     // MARK: - Private Methods
     
-    /// Apply Keccak-f[1600] permutation
+    /// Apply Keccak-f[1600] permutation (24 rounds)
     private static func keccakF1600(_ state: inout [UInt64]) {
         for round in 0..<24 {
             // θ (theta) step
             var c = [UInt64](repeating: 0, count: 5)
-            var d = [UInt64](repeating: 0, count: 5)
-            
             for x in 0..<5 {
                 c[x] = state[x] ^ state[x + 5] ^ state[x + 10] ^ state[x + 15] ^ state[x + 20]
             }
             
+            var d = [UInt64](repeating: 0, count: 5)
             for x in 0..<5 {
                 d[x] = c[(x + 4) % 5] ^ rotateLeft(c[(x + 1) % 5], by: 1)
             }
             
-            for x in 0..<5 {
-                for y in 0..<5 {
-                    state[x + y * 5] ^= d[x]
-                }
+            for i in 0..<25 {
+                state[i] ^= d[i % 5]
             }
             
             // ρ (rho) and π (pi) steps combined
             var b = [UInt64](repeating: 0, count: 25)
             for x in 0..<5 {
                 for y in 0..<5 {
-                    let newX = y
-                    let newY = (2 * x + 3 * y) % 5
-                    b[newX + newY * 5] = rotateLeft(state[x + y * 5], by: rotationOffsets[y][x])
+                    let index = x + 5 * y
+                    let newIndex = y + 5 * ((2 * x + 3 * y) % 5)
+                    b[newIndex] = rotateLeft(state[index], by: rotationOffsets[index])
                 }
             }
             
             // χ (chi) step
             for x in 0..<5 {
                 for y in 0..<5 {
-                    state[x + y * 5] = b[x + y * 5] ^ ((~b[((x + 1) % 5) + y * 5]) & b[((x + 2) % 5) + y * 5])
+                    let index = x + 5 * y
+                    state[index] = b[index] ^ ((~b[((x + 1) % 5) + 5 * y]) & b[((x + 2) % 5) + 5 * y])
                 }
             }
             
@@ -154,11 +153,7 @@ final class Keccak256 {
     
     /// Rotate a 64-bit value left by the specified number of bits
     private static func rotateLeft(_ value: UInt64, by bits: Int) -> UInt64 {
-        let effectiveBits = bits % 64
-        if effectiveBits == 0 {
-            return value
-        }
-        return (value << effectiveBits) | (value >> (64 - effectiveBits))
+        return (value << bits) | (value >> (64 - bits))
     }
 }
 
