@@ -74,7 +74,7 @@ struct SurTests {
     
     @Test func testSecp256k1PublicKeyDerivation() async throws {
         // Known private key should produce known public key
-        // Private key: 0x0000...0001 (32 bytes)
+        // Private key: 0x0000...0001 (32 bytes) = generator point G
         var privateKey = Data(repeating: 0x00, count: 31)
         privateKey.append(0x01)
         
@@ -85,6 +85,28 @@ struct SurTests {
         // Uncompressed public key should be 65 bytes (0x04 + X + Y)
         #expect(publicKey.count == 65)
         #expect(publicKey[0] == 0x04)
+        
+        // For private key = 1, public key should be the generator point G
+        // G.x = 79BE667EF9DCBBAC55A06295CE870B07029BFCDB2DCE28D959F2815B16F81798
+        // G.y = 483ADA7726A3C4655DA4FBFC0E1108A8FD17B448A68554199C47D08FFB10D4B8
+        let expectedX = Data([
+            0x79, 0xBE, 0x66, 0x7E, 0xF9, 0xDC, 0xBB, 0xAC,
+            0x55, 0xA0, 0x62, 0x95, 0xCE, 0x87, 0x0B, 0x07,
+            0x02, 0x9B, 0xFC, 0xDB, 0x2D, 0xCE, 0x28, 0xD9,
+            0x59, 0xF2, 0x81, 0x5B, 0x16, 0xF8, 0x17, 0x98
+        ])
+        let expectedY = Data([
+            0x48, 0x3A, 0xDA, 0x77, 0x26, 0xA3, 0xC4, 0x65,
+            0x5D, 0xA4, 0xFB, 0xFC, 0x0E, 0x11, 0x08, 0xA8,
+            0xFD, 0x17, 0xB4, 0x48, 0xA6, 0x85, 0x54, 0x19,
+            0x9C, 0x47, 0xD0, 0x8F, 0xFB, 0x10, 0xD4, 0xB8
+        ])
+        
+        let actualX = publicKey[1..<33]
+        let actualY = publicKey[33..<65]
+        
+        #expect(Data(actualX) == expectedX)
+        #expect(Data(actualY) == expectedY)
     }
     
     // MARK: - Ethereum Address Tests

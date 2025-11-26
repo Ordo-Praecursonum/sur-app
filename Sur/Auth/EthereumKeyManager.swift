@@ -298,17 +298,7 @@ final class EthereumKeyManager {
     /// Returns the sum modulo the curve order, which is guaranteed to be a valid private key
     /// as long as it's non-zero (zero would indicate an extremely rare edge case)
     private static func addPrivateKeys(_ key1: Data, _ key2: Data) -> Data {
-        let a = BigUInt(data: key1)
-        let b = BigUInt(data: key2)
-        var sum = (a + b) % Secp256k1.n
-        
-        // Handle the edge case where sum is zero (probability ~ 1/n ≈ 2^-256)
-        // In this case, we add 1 to get a valid key (as per BIP-32 recommendation)
-        if sum.isZero {
-            sum = BigUInt.one
-        }
-        
-        return sum.toData(length: 32)
+        return Secp256k1.addModN(key1, key2)
     }
     
     /// Generate Ethereum address from uncompressed public key using Keccak-256

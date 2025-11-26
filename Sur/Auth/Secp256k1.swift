@@ -2,494 +2,173 @@
 //  Secp256k1.swift
 //  Sur
 //
-//  Pure Swift implementation of secp256k1 elliptic curve operations.
-//  This curve is used by Ethereum, Bitcoin, and other cryptocurrencies for key generation.
+//  secp256k1 elliptic curve wrapper using the GigaBitcoin/secp256k1.swift library.
+//  This provides proper, battle-tested cryptographic operations for Ethereum compatibility.
 //
-//  IMPORTANT: This implementation provides:
-//  - Private key to public key derivation
-//  - Proper uncompressed public key format (65 bytes: 0x04 + X + Y)
-//  - Compatibility with MetaMask and other Ethereum wallets
+//  The secp256k1 curve is used by Ethereum, Bitcoin, and other cryptocurrencies.
+//  This wrapper uses libsecp256k1 under the hood for correct and efficient operations.
 //
-//  The secp256k1 curve parameters:
-//  - p (prime): 2^256 - 2^32 - 977
-//  - a = 0
-//  - b = 7
-//  - G = generator point
-//  - n = order of G (curve order)
+//  Key formats:
+//  - Private key: 32 bytes
+//  - Uncompressed public key: 65 bytes (0x04 + X + Y)
+//  - Compressed public key: 33 bytes (0x02 or 0x03 + X)
 //
 
 import Foundation
+import secp256k1
 
-/// secp256k1 elliptic curve implementation for Ethereum compatibility
+/// secp256k1 elliptic curve wrapper for Ethereum compatibility
+/// Uses the GigaBitcoin/secp256k1.swift library for proper cryptographic operations
 final class Secp256k1 {
     
-    // MARK: - Curve Parameters
-    
-    /// The prime field p = 2^256 - 2^32 - 977
-    static let p = BigUInt(hexString: "FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEFFFFFC2F")!
+    // MARK: - Curve Parameters (for reference)
     
     /// Curve order n (order of the generator point G)
-    static let n = BigUInt(hexString: "FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141")!
-    
-    /// Curve coefficient a = 0
-    static let a = BigUInt.zero
-    
-    /// Curve coefficient b = 7
-    static let b = BigUInt(7)
-    
-    /// Generator point G (x-coordinate)
-    static let gx = BigUInt(hexString: "79BE667EF9DCBBAC55A06295CE870B07029BFCDB2DCE28D959F2815B16F81798")!
-    
-    /// Generator point G (y-coordinate)
-    static let gy = BigUInt(hexString: "483ADA7726A3C4655DA4FBFC0E1108A8FD17B448A68554199C47D08FFB10D4B8")!
-    
-    // MARK: - Point Structure
-    
-    /// Represents a point on the secp256k1 curve
-    struct Point: Equatable {
-        let x: BigUInt
-        let y: BigUInt
-        let isInfinity: Bool
-        
-        /// Point at infinity (identity element)
-        static let infinity = Point(x: .zero, y: .zero, isInfinity: true)
-        
-        /// Generator point G
-        static let generator = Point(x: gx, y: gy, isInfinity: false)
-        
-        init(x: BigUInt, y: BigUInt, isInfinity: Bool = false) {
-            self.x = x
-            self.y = y
-            self.isInfinity = isInfinity
-        }
-    }
+    /// This is needed for modular arithmetic in BIP-32 key derivation
+    static let curveOrderBytes: [UInt8] = [
+        0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+        0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFE,
+        0xBA, 0xAE, 0xDC, 0xE6, 0xAF, 0x48, 0xA0, 0x3B,
+        0xBF, 0xD2, 0x5E, 0x8C, 0xD0, 0x36, 0x41, 0x41
+    ]
     
     // MARK: - Public Interface
     
-    /// Derive public key from private key
+    /// Derive public key from private key using secp256k1 library
     /// - Parameter privateKey: 32-byte private key data
     /// - Returns: 65-byte uncompressed public key (0x04 + X + Y) or nil if invalid
     static func derivePublicKey(from privateKey: Data) -> Data? {
         guard privateKey.count == 32 else { return nil }
         
-        // Convert private key to BigUInt
-        let scalar = BigUInt(data: privateKey)
-        
-        // Validate private key is in valid range [1, n-1]
-        guard scalar > .zero && scalar < n else { return nil }
-        
-        // Compute public key = scalar * G
-        let publicPoint = scalarMultiply(scalar: scalar, point: .generator)
-        
-        guard !publicPoint.isInfinity else { return nil }
-        
-        // Format as uncompressed public key (0x04 + X + Y)
-        var result = Data([0x04])
-        result.append(publicPoint.x.toData(length: 32))
-        result.append(publicPoint.y.toData(length: 32))
-        
-        return result
+        do {
+            // Create a secp256k1 private key from raw bytes
+            let privKey = try secp256k1.Signing.PrivateKey(
+                dataRepresentation: privateKey,
+                format: .uncompressed
+            )
+            
+            // Get the public key in uncompressed format
+            let publicKeyData = privKey.publicKey.dataRepresentation
+            
+            // Ensure we have the correct format (65 bytes with 0x04 prefix)
+            if publicKeyData.count == 65 && publicKeyData[0] == 0x04 {
+                return publicKeyData
+            } else if publicKeyData.count == 64 {
+                // Add the 0x04 prefix for uncompressed format
+                var result = Data([0x04])
+                result.append(publicKeyData)
+                return result
+            }
+            
+            return publicKeyData
+        } catch {
+            return nil
+        }
     }
     
-    /// Derive compressed public key from private key
+    /// Derive compressed public key from private key using secp256k1 library
     /// - Parameter privateKey: 32-byte private key data
     /// - Returns: 33-byte compressed public key (0x02/0x03 + X) or nil if invalid
     static func deriveCompressedPublicKey(from privateKey: Data) -> Data? {
         guard privateKey.count == 32 else { return nil }
         
-        let scalar = BigUInt(data: privateKey)
-        guard scalar > .zero && scalar < n else { return nil }
-        
-        let publicPoint = scalarMultiply(scalar: scalar, point: .generator)
-        guard !publicPoint.isInfinity else { return nil }
-        
-        // Compressed format: 0x02 for even y, 0x03 for odd y
-        let prefix: UInt8 = publicPoint.y.isEven ? 0x02 : 0x03
-        var result = Data([prefix])
-        result.append(publicPoint.x.toData(length: 32))
-        
-        return result
+        do {
+            // Create a secp256k1 private key
+            let privKey = try secp256k1.Signing.PrivateKey(
+                dataRepresentation: privateKey,
+                format: .compressed
+            )
+            
+            // Get the public key in compressed format (33 bytes)
+            return privKey.publicKey.dataRepresentation
+        } catch {
+            return nil
+        }
     }
     
-    /// Validate private key is in valid range
+    /// Validate private key is in valid range [1, n-1]
     /// - Parameter privateKey: 32-byte private key data
     /// - Returns: true if valid
     static func isValidPrivateKey(_ privateKey: Data) -> Bool {
         guard privateKey.count == 32 else { return false }
         
-        let scalar = BigUInt(data: privateKey)
-        return scalar > .zero && scalar < n
-    }
-    
-    // MARK: - Elliptic Curve Operations
-    
-    /// Add two points on the curve
-    static func pointAdd(_ p1: Point, _ p2: Point) -> Point {
-        if p1.isInfinity { return p2 }
-        if p2.isInfinity { return p1 }
+        // Check it's not all zeros
+        let isZero = privateKey.allSatisfy { $0 == 0 }
+        if isZero { return false }
         
-        // If points are inverses, return infinity
-        if p1.x == p2.x && (p1.y + p2.y) % p == .zero {
-            return .infinity
+        // Check it's less than the curve order
+        let privateKeyBytes = [UInt8](privateKey)
+        if !isLessThanCurveOrder(privateKeyBytes) {
+            return false
         }
         
-        let lambda: BigUInt
-        
-        if p1.x == p2.x && p1.y == p2.y {
-            // Point doubling: λ = (3x₁² + a) / (2y₁)
-            let numerator = (BigUInt(3) * p1.x * p1.x + a) % p
-            let denominator = (BigUInt(2) * p1.y) % p
-            lambda = (numerator * modInverse(denominator, p)) % p
-        } else {
-            // Point addition: λ = (y₂ - y₁) / (x₂ - x₁)
-            let numerator = (p2.y + p - p1.y) % p
-            let denominator = (p2.x + p - p1.x) % p
-            lambda = (numerator * modInverse(denominator, p)) % p
-        }
-        
-        // x₃ = λ² - x₁ - x₂
-        let x3 = (lambda * lambda + p + p - p1.x - p2.x) % p
-        
-        // y₃ = λ(x₁ - x₃) - y₁
-        let y3 = (lambda * ((p1.x + p - x3) % p) + p - p1.y) % p
-        
-        return Point(x: x3, y: y3)
-    }
-    
-    /// Double-and-add scalar multiplication
-    static func scalarMultiply(scalar: BigUInt, point: Point) -> Point {
-        var result = Point.infinity
-        var current = point
-        var k = scalar
-        
-        while k > .zero {
-            if k.isOdd {
-                result = pointAdd(result, current)
-            }
-            current = pointAdd(current, current) // Point doubling
-            k = k >> 1
-        }
-        
-        return result
-    }
-    
-    /// Compute modular multiplicative inverse using Fermat's Little Theorem
-    /// For prime p: a^(-1) ≡ a^(p-2) mod p
-    /// This is simpler and more reliable than extended Euclidean algorithm for prime moduli
-    static func modInverse(_ a: BigUInt, _ m: BigUInt) -> BigUInt {
-        if a == .zero {
-            return .zero
-        }
-        
-        // For secp256k1, p is prime, so we can use Fermat's Little Theorem:
-        // a^(-1) ≡ a^(p-2) mod p
-        let exponent = m - BigUInt(2)
-        return modPow(a, exponent, m)
-    }
-    
-    /// Compute modular exponentiation: base^exp mod m
-    /// Uses binary exponentiation (square-and-multiply) for efficiency
-    private static func modPow(_ base: BigUInt, _ exp: BigUInt, _ m: BigUInt) -> BigUInt {
-        if m == .one {
-            return .zero
-        }
-        
-        var result = BigUInt.one
-        var base = base % m
-        var exp = exp
-        
-        while exp > .zero {
-            if exp.isOdd {
-                result = (result * base) % m
-            }
-            exp = exp >> 1
-            base = (base * base) % m
-        }
-        
-        return result
-    }
-}
-
-// MARK: - BigUInt Implementation
-
-/// Simple big unsigned integer for secp256k1 operations
-/// Stores 256-bit numbers as an array of 64-bit words (little-endian)
-struct BigUInt: Equatable, Comparable {
-    private var words: [UInt64]
-    
-    /// Zero value
-    static let zero = BigUInt()
-    
-    /// One value
-    static let one = BigUInt(1)
-    
-    init() {
-        self.words = [0, 0, 0, 0]
-    }
-    
-    init(_ value: UInt64) {
-        self.words = [value, 0, 0, 0]
-    }
-    
-    init(words: [UInt64]) {
-        self.words = words
-        while self.words.count < 4 {
-            self.words.append(0)
+        // Try to create a private key - the library will validate it
+        do {
+            _ = try secp256k1.Signing.PrivateKey(dataRepresentation: privateKey)
+            return true
+        } catch {
+            return false
         }
     }
     
-    /// Initialize from hex string
-    init?(hexString: String) {
-        var hex = hexString.lowercased()
-        if hex.hasPrefix("0x") {
-            hex = String(hex.dropFirst(2))
+    /// Add two 32-byte values modulo the curve order n
+    /// This is needed for BIP-32 key derivation: child = (parent + tweak) mod n
+    /// - Parameters:
+    ///   - a: First 32-byte value
+    ///   - b: Second 32-byte value
+    /// - Returns: Sum modulo n as 32-byte Data
+    static func addModN(_ a: Data, _ b: Data) -> Data {
+        guard a.count == 32, b.count == 32 else {
+            return Data(repeating: 0, count: 32)
         }
         
-        // Pad to 64 characters (256 bits)
-        while hex.count < 64 {
-            hex = "0" + hex
+        var result = [UInt8](repeating: 0, count: 32)
+        let aBytes = [UInt8](a)
+        let bBytes = [UInt8](b)
+        
+        // Add with carry, starting from least significant byte
+        var carry: UInt16 = 0
+        for i in (0..<32).reversed() {
+            let sum = UInt16(aBytes[i]) + UInt16(bBytes[i]) + carry
+            result[i] = UInt8(sum & 0xFF)
+            carry = sum >> 8
         }
         
-        var words = [UInt64]()
-        
-        // Parse 16 hex characters at a time (64 bits) from right to left
-        var index = hex.endIndex
-        while words.count < 4 && index > hex.startIndex {
-            let start = hex.index(index, offsetBy: -min(16, hex.distance(from: hex.startIndex, to: index)))
-            let chunk = String(hex[start..<index])
-            guard let value = UInt64(chunk, radix: 16) else { return nil }
-            words.append(value)
-            index = start
-        }
-        
-        while words.count < 4 {
-            words.append(0)
-        }
-        
-        self.words = words
-    }
-    
-    /// Initialize from Data (big-endian)
-    init(data: Data) {
-        var words = [UInt64](repeating: 0, count: 4)
-        let bytes = [UInt8](data)
-        
-        // Convert big-endian bytes to little-endian words
-        for (i, byte) in bytes.enumerated() {
-            let wordIndex = (bytes.count - 1 - i) / 8
-            let byteIndex = (bytes.count - 1 - i) % 8
-            if wordIndex < 4 {
-                words[wordIndex] |= UInt64(byte) << (byteIndex * 8)
-            }
-        }
-        
-        self.words = words
-    }
-    
-    /// Convert to Data (big-endian, padded to specified length)
-    func toData(length: Int = 32) -> Data {
-        var bytes = [UInt8](repeating: 0, count: length)
-        
-        for wordIndex in 0..<4 {
-            for byteIndex in 0..<8 {
-                let globalByteIndex = length - 1 - (wordIndex * 8 + byteIndex)
-                if globalByteIndex >= 0 && globalByteIndex < length {
-                    bytes[globalByteIndex] = UInt8((words[wordIndex] >> (byteIndex * 8)) & 0xFF)
+        // Reduce modulo n if result >= n
+        while !isLessThanCurveOrder(result) {
+            // Subtract curve order
+            var borrow: Int16 = 0
+            for i in (0..<32).reversed() {
+                let diff = Int16(result[i]) - Int16(curveOrderBytes[i]) - borrow
+                if diff < 0 {
+                    result[i] = UInt8((diff + 256) & 0xFF)
+                    borrow = 1
+                } else {
+                    result[i] = UInt8(diff & 0xFF)
+                    borrow = 0
                 }
             }
         }
         
-        return Data(bytes)
-    }
-    
-    /// Convert to hex string
-    func toHexString() -> String {
-        var result = ""
-        for word in words.reversed() {
-            result += String(format: "%016llx", word)
-        }
-        return result.drop(while: { $0 == "0" }).isEmpty ? "0" : String(result.drop(while: { $0 == "0" }))
-    }
-    
-    var isOdd: Bool {
-        return words[0] & 1 == 1
-    }
-    
-    var isEven: Bool {
-        return words[0] & 1 == 0
-    }
-    
-    /// Check if value is zero
-    var isZero: Bool {
-        return words.allSatisfy { $0 == 0 }
-    }
-    
-    // MARK: - Arithmetic Operations
-    
-    static func + (lhs: BigUInt, rhs: BigUInt) -> BigUInt {
-        var result = [UInt64](repeating: 0, count: 5)
-        var carry: UInt64 = 0
-        
-        for i in 0..<4 {
-            let sum = lhs.words[i].addingReportingOverflow(rhs.words[i])
-            let sumWithCarry = sum.partialValue.addingReportingOverflow(carry)
-            result[i] = sumWithCarry.partialValue
-            carry = (sum.overflow ? 1 : 0) + (sumWithCarry.overflow ? 1 : 0)
-        }
-        result[4] = carry
-        
-        return BigUInt(words: Array(result.prefix(4)))
-    }
-    
-    static func - (lhs: BigUInt, rhs: BigUInt) -> BigUInt {
-        var result = [UInt64](repeating: 0, count: 4)
-        var borrow: UInt64 = 0
-        
-        for i in 0..<4 {
-            let diff = lhs.words[i].subtractingReportingOverflow(rhs.words[i])
-            let diffWithBorrow = diff.partialValue.subtractingReportingOverflow(borrow)
-            result[i] = diffWithBorrow.partialValue
-            borrow = (diff.overflow ? 1 : 0) + (diffWithBorrow.overflow ? 1 : 0)
+        // Handle zero case (unlikely but possible)
+        let isZero = result.allSatisfy { $0 == 0 }
+        if isZero {
+            result[31] = 1  // Return 1 instead of 0
         }
         
-        return BigUInt(words: result)
+        return Data(result)
     }
     
-    static func * (lhs: BigUInt, rhs: BigUInt) -> BigUInt {
-        var result = [UInt64](repeating: 0, count: 8)
+    // MARK: - Private Helpers
+    
+    /// Check if a 32-byte value is less than the curve order
+    private static func isLessThanCurveOrder(_ value: [UInt8]) -> Bool {
+        guard value.count == 32 else { return false }
         
-        for i in 0..<4 {
-            var carry: UInt64 = 0
-            for j in 0..<4 {
-                if i + j < 8 {
-                    let (high, low) = lhs.words[i].multipliedFullWidth(by: rhs.words[j])
-                    let sum1 = result[i + j].addingReportingOverflow(low)
-                    let sum2 = sum1.partialValue.addingReportingOverflow(carry)
-                    result[i + j] = sum2.partialValue
-                    carry = high + (sum1.overflow ? 1 : 0) + (sum2.overflow ? 1 : 0)
-                }
-            }
-            if i + 4 < 8 {
-                result[i + 4] = result[i + 4].addingReportingOverflow(carry).partialValue
-            }
+        for i in 0..<32 {
+            if value[i] < curveOrderBytes[i] { return true }
+            if value[i] > curveOrderBytes[i] { return false }
         }
-        
-        // Truncate to 256 bits
-        return BigUInt(words: Array(result.prefix(4)))
-    }
-    
-    static func / (lhs: BigUInt, rhs: BigUInt) -> BigUInt {
-        if rhs.isZero { return .zero }
-        if lhs < rhs { return .zero }
-        if lhs == rhs { return .one }
-        
-        var quotient = BigUInt.zero
-        var remainder = BigUInt.zero
-        
-        // Process each bit from MSB to LSB
-        for wordIndex in (0..<4).reversed() {
-            for bitIndex in (0..<64).reversed() {
-                // Shift remainder left by 1 and add next bit
-                remainder = remainder << 1
-                let bit = (lhs.words[wordIndex] >> bitIndex) & 1
-                remainder.words[0] |= bit
-                
-                if remainder >= rhs {
-                    remainder = remainder - rhs
-                    let qWordIndex = wordIndex
-                    quotient.words[qWordIndex] |= (1 << bitIndex)
-                }
-            }
-        }
-        
-        return quotient
-    }
-    
-    static func % (lhs: BigUInt, rhs: BigUInt) -> BigUInt {
-        if rhs.isZero { return lhs }
-        if lhs < rhs { return lhs }
-        if lhs == rhs { return .zero }
-        
-        var remainder = BigUInt.zero
-        
-        // Process each bit from MSB to LSB
-        for wordIndex in (0..<4).reversed() {
-            for bitIndex in (0..<64).reversed() {
-                // Shift remainder left by 1 and add next bit
-                remainder = remainder << 1
-                let bit = (lhs.words[wordIndex] >> bitIndex) & 1
-                remainder.words[0] |= bit
-                
-                if remainder >= rhs {
-                    remainder = remainder - rhs
-                }
-            }
-        }
-        
-        return remainder
-    }
-    
-    static func << (lhs: BigUInt, rhs: Int) -> BigUInt {
-        guard rhs > 0 else { return lhs }
-        guard rhs < 256 else { return .zero }
-        
-        let wordShift = rhs / 64
-        let bitShift = rhs % 64
-        
-        var result = [UInt64](repeating: 0, count: 4)
-        
-        for i in 0..<4 {
-            if i + wordShift < 4 {
-                result[i + wordShift] |= lhs.words[i] << bitShift
-            }
-            if bitShift > 0 && i + wordShift + 1 < 4 {
-                result[i + wordShift + 1] |= lhs.words[i] >> (64 - bitShift)
-            }
-        }
-        
-        return BigUInt(words: result)
-    }
-    
-    static func >> (lhs: BigUInt, rhs: Int) -> BigUInt {
-        guard rhs > 0 else { return lhs }
-        guard rhs < 256 else { return .zero }
-        
-        let wordShift = rhs / 64
-        let bitShift = rhs % 64
-        
-        var result = [UInt64](repeating: 0, count: 4)
-        
-        for i in 0..<4 {
-            if i >= wordShift {
-                result[i - wordShift] |= lhs.words[i] >> bitShift
-            }
-            if bitShift > 0 && i > wordShift {
-                result[i - wordShift - 1] |= lhs.words[i] << (64 - bitShift)
-            }
-        }
-        
-        return BigUInt(words: result)
-    }
-    
-    // MARK: - Comparison
-    
-    static func < (lhs: BigUInt, rhs: BigUInt) -> Bool {
-        for i in (0..<4).reversed() {
-            if lhs.words[i] < rhs.words[i] { return true }
-            if lhs.words[i] > rhs.words[i] { return false }
-        }
-        return false
-    }
-    
-    static func > (lhs: BigUInt, rhs: BigUInt) -> Bool {
-        return rhs < lhs
-    }
-    
-    static func <= (lhs: BigUInt, rhs: BigUInt) -> Bool {
-        return !(lhs > rhs)
-    }
-    
-    static func >= (lhs: BigUInt, rhs: BigUInt) -> Bool {
-        return !(lhs < rhs)
+        return false  // Equal to curve order
     }
 }
