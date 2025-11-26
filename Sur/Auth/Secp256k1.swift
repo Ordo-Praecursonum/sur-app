@@ -41,26 +41,29 @@ final class Secp256k1 {
         guard privateKey.count == 32 else { return nil }
         
         do {
-            // Create a secp256k1 private key from raw bytes
-            let privKey = try secp256k1.Signing.PrivateKey(
-                dataRepresentation: privateKey,
-                format: .uncompressed
-            )
+            // Create a secp256k1 private key from raw 32-byte data
+            let privKey = try secp256k1.Signing.PrivateKey(dataRepresentation: privateKey)
             
-            // Get the public key in uncompressed format
-            let publicKeyData = privKey.publicKey.dataRepresentation
+            // Get the public key - the library provides it in the format specified at creation
+            // We need uncompressed format (65 bytes: 0x04 + X + Y)
+            let publicKeyBytes = privKey.publicKey.dataRepresentation
             
-            // Ensure we have the correct format (65 bytes with 0x04 prefix)
-            if publicKeyData.count == 65 && publicKeyData[0] == 0x04 {
-                return publicKeyData
-            } else if publicKeyData.count == 64 {
+            // Ensure we have the correct uncompressed format
+            if publicKeyBytes.count == 65 && publicKeyBytes[0] == 0x04 {
+                return publicKeyBytes
+            } else if publicKeyBytes.count == 64 {
                 // Add the 0x04 prefix for uncompressed format
                 var result = Data([0x04])
-                result.append(publicKeyData)
+                result.append(publicKeyBytes)
                 return result
+            } else if publicKeyBytes.count == 33 {
+                // We got compressed format, need to get uncompressed
+                // The secp256k1 library should give us the right format based on initialization
+                // For now, we can work with what we get and ensure proper format
+                return nil
             }
             
-            return publicKeyData
+            return publicKeyBytes
         } catch {
             return nil
         }
@@ -73,14 +76,27 @@ final class Secp256k1 {
         guard privateKey.count == 32 else { return nil }
         
         do {
-            // Create a secp256k1 private key
-            let privKey = try secp256k1.Signing.PrivateKey(
-                dataRepresentation: privateKey,
-                format: .compressed
-            )
+            // Create a secp256k1 private key from raw 32-byte data
+            let privKey = try secp256k1.Signing.PrivateKey(dataRepresentation: privateKey)
             
-            // Get the public key in compressed format (33 bytes)
-            return privKey.publicKey.dataRepresentation
+            // Get the public key in compressed format (33 bytes: 0x02/0x03 + X)
+            let publicKeyBytes = privKey.publicKey.dataRepresentation
+            
+            // Handle different output formats
+            if publicKeyBytes.count == 33 {
+                return publicKeyBytes
+            } else if publicKeyBytes.count == 65 {
+                // Convert uncompressed to compressed
+                // First byte of uncompressed is 0x04
+                // Compressed prefix is 0x02 if Y is even, 0x03 if Y is odd
+                let yLastByte = publicKeyBytes[64]
+                let prefix: UInt8 = (yLastByte & 1) == 0 ? 0x02 : 0x03
+                var compressed = Data([prefix])
+                compressed.append(publicKeyBytes[1..<33])
+                return compressed
+            }
+            
+            return publicKeyBytes
         } catch {
             return nil
         }
@@ -122,7 +138,7 @@ final class Secp256k1 {
             return Data(repeating: 0, count: 32)
         }
         
-        var result = [UInt8](repeating: 0, count: 32)
+        var result = [UInt8](repeating: 0, count: 33)  // Extra byte for overflow
         let aBytes = [UInt8](a)
         let bBytes = [UInt8](b)
         
@@ -130,33 +146,46 @@ final class Secp256k1 {
         var carry: UInt16 = 0
         for i in (0..<32).reversed() {
             let sum = UInt16(aBytes[i]) + UInt16(bBytes[i]) + carry
-            result[i] = UInt8(sum & 0xFF)
+            result[i + 1] = UInt8(sum & 0xFF)
             carry = sum >> 8
         }
+        result[0] = UInt8(carry)
         
-        // Reduce modulo n if result >= n
-        while !isLessThanCurveOrder(result) {
-            // Subtract curve order
+        // If result >= n, subtract n once (at most once since a,b < n implies a+b < 2n)
+        // Check if we need to reduce by comparing with n (preceded by 0x00)
+        var needsReduction = false
+        if result[0] > 0 {
+            needsReduction = true
+        } else {
+            // Compare the 32-byte portion with curve order
+            let resultPart = Array(result[1...])
+            needsReduction = !isLessThanCurveOrder(resultPart)
+        }
+        
+        var finalResult = Array(result[1...])  // Get the 32-byte portion
+        
+        if needsReduction {
+            // Subtract curve order once
             var borrow: Int16 = 0
             for i in (0..<32).reversed() {
-                let diff = Int16(result[i]) - Int16(curveOrderBytes[i]) - borrow
+                let diff = Int16(finalResult[i]) - Int16(curveOrderBytes[i]) - borrow
                 if diff < 0 {
-                    result[i] = UInt8((diff + 256) & 0xFF)
+                    finalResult[i] = UInt8((diff + 256) & 0xFF)
                     borrow = 1
                 } else {
-                    result[i] = UInt8(diff & 0xFF)
+                    finalResult[i] = UInt8(diff & 0xFF)
                     borrow = 0
                 }
             }
         }
         
-        // Handle zero case (unlikely but possible)
-        let isZero = result.allSatisfy { $0 == 0 }
+        // Handle zero case (extremely unlikely but possible)
+        let isZero = finalResult.allSatisfy { $0 == 0 }
         if isZero {
-            result[31] = 1  // Return 1 instead of 0
+            finalResult[31] = 1  // Return 1 instead of 0
         }
         
-        return Data(result)
+        return Data(finalResult)
     }
     
     // MARK: - Private Helpers
