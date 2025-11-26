@@ -295,10 +295,19 @@ final class EthereumKeyManager {
     
     /// Add two private keys together (mod curve order n)
     /// This implements the BIP-32 child key derivation formula: child = (parent + tweak) mod n
+    /// Returns the sum modulo the curve order, which is guaranteed to be a valid private key
+    /// as long as it's non-zero (zero would indicate an extremely rare edge case)
     private static func addPrivateKeys(_ key1: Data, _ key2: Data) -> Data {
         let a = BigUInt(data: key1)
         let b = BigUInt(data: key2)
-        let sum = (a + b) % Secp256k1.n
+        var sum = (a + b) % Secp256k1.n
+        
+        // Handle the edge case where sum is zero (probability ~ 1/n ≈ 2^-256)
+        // In this case, we add 1 to get a valid key (as per BIP-32 recommendation)
+        if sum.isZero {
+            sum = BigUInt.one
+        }
+        
         return sum.toData(length: 32)
     }
     

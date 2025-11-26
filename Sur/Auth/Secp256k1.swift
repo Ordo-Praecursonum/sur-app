@@ -173,51 +173,40 @@ final class Secp256k1 {
         return result
     }
     
-    /// Compute modular multiplicative inverse using extended Euclidean algorithm
+    /// Compute modular multiplicative inverse using Fermat's Little Theorem
+    /// For prime p: a^(-1) ≡ a^(p-2) mod p
+    /// This is simpler and more reliable than extended Euclidean algorithm for prime moduli
     static func modInverse(_ a: BigUInt, _ m: BigUInt) -> BigUInt {
         if a == .zero {
             return .zero
         }
         
-        var (old_r, r) = (a, m)
-        var (old_s, s) = (BigUInt.one, BigUInt.zero)
-        var isNegative = false
-        
-        while r != .zero {
-            let quotient = old_r / r
-            let temp_r = r
-            
-            // Handle subtraction with potential negative results
-            if old_r >= quotient * r {
-                r = old_r - quotient * r
-            } else {
-                r = quotient * r - old_r
-            }
-            old_r = temp_r
-            
-            let temp_s = s
-            let product = quotient * s
-            
-            if !isNegative {
-                if old_s >= product {
-                    s = old_s - product
-                    isNegative = false
-                } else {
-                    s = product - old_s
-                    isNegative = true
-                }
-            } else {
-                s = old_s + product
-                isNegative = false
-            }
-            old_s = temp_s
+        // For secp256k1, p is prime, so we can use Fermat's Little Theorem:
+        // a^(-1) ≡ a^(p-2) mod p
+        let exponent = m - BigUInt(2)
+        return modPow(a, exponent, m)
+    }
+    
+    /// Compute modular exponentiation: base^exp mod m
+    /// Uses binary exponentiation (square-and-multiply) for efficiency
+    private static func modPow(_ base: BigUInt, _ exp: BigUInt, _ m: BigUInt) -> BigUInt {
+        if m == .one {
+            return .zero
         }
         
-        // Ensure result is positive
-        if isNegative {
-            return m - (old_s % m)
+        var result = BigUInt.one
+        var base = base % m
+        var exp = exp
+        
+        while exp > .zero {
+            if exp.isOdd {
+                result = (result * base) % m
+            }
+            exp = exp >> 1
+            base = (base * base) % m
         }
-        return old_s % m
+        
+        return result
     }
 }
 
