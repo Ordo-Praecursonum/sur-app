@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		CB3482102EDA2F9800F1DD42 /* P256K in Frameworks */ = {isa = PBXBuildFile; productRef = CB34820F2EDA2F9800F1DD42 /* P256K */; };
 		EBD1989D2E9117070026ED7D /* SurKeyboard.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = EBD198962E9117070026ED7D /* SurKeyboard.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
 
@@ -106,6 +107,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				CB3482102EDA2F9800F1DD42 /* P256K in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -133,6 +135,13 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		CB34820E2EDA2F9800F1DD42 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
 		EBD1984B2E90F8650026ED7D = {
 			isa = PBXGroup;
 			children = (
@@ -140,6 +149,7 @@
 				EBD198642E90F8680026ED7D /* SurTests */,
 				EBD1986E2E90F8680026ED7D /* SurUITests */,
 				EBD198972E9117070026ED7D /* SurKeyboard */,
+				CB34820E2EDA2F9800F1DD42 /* Frameworks */,
 				EBD198552E90F8650026ED7D /* Products */,
 			);
 			sourceTree = "<group>";
@@ -177,6 +187,7 @@
 			);
 			name = Sur;
 			packageProductDependencies = (
+				CB34820F2EDA2F9800F1DD42 /* P256K */,
 			);
 			productName = Sur;
 			productReference = EBD198542E90F8650026ED7D /* Sur.app */;
@@ -286,8 +297,8 @@
 			mainGroup = EBD1984B2E90F8650026ED7D;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
-				EBD198A42E911E780026ED7D /* XCRemoteSwiftPackageReference "web3" */,
 				EBD198A52E91462A0026ED7D /* XCRemoteSwiftPackageReference "swift-crypto" */,
+				CB3481D92EDA2CA000F1DD42 /* XCRemoteSwiftPackageReference "swift-secp256k1" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = EBD198552E90F8650026ED7D /* Products */;
@@ -741,12 +752,12 @@
 /* End XCConfigurationList section */
 
 /* Begin XCRemoteSwiftPackageReference section */
-		EBD198A42E911E780026ED7D /* XCRemoteSwiftPackageReference "web3" */ = {
+		CB3481D92EDA2CA000F1DD42 /* XCRemoteSwiftPackageReference "swift-secp256k1" */ = {
 			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/argentlabs/web3.swift";
+			repositoryURL = "git@github.com:21-DOT-DEV/swift-secp256k1.git";
 			requirement = {
 				kind = upToNextMajorVersion;
-				minimumVersion = 1.6.1;
+				minimumVersion = 0.21.1;
 			};
 		};
 		EBD198A52E91462A0026ED7D /* XCRemoteSwiftPackageReference "swift-crypto" */ = {
@@ -758,6 +769,14 @@
 			};
 		};
 /* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		CB34820F2EDA2F9800F1DD42 /* P256K */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = CB3481D92EDA2CA000F1DD42 /* XCRemoteSwiftPackageReference "swift-secp256k1" */;
+			productName = P256K;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = EBD1984C2E90F8650026ED7D /* Project object */;
 }
