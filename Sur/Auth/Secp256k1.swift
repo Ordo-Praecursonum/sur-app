@@ -2,7 +2,7 @@
 //  Secp256k1.swift
 //  Sur
 //
-//  secp256k1 elliptic curve wrapper using the GigaBitcoin/secp256k1.swift library.
+//  secp256k1 elliptic curve wrapper using the 21-DOT-DEV/swift-secp256k1 library.
 //  This provides proper, battle-tested cryptographic operations for Ethereum compatibility.
 //
 //  The secp256k1 curve is used by Ethereum, Bitcoin, and other cryptocurrencies.
@@ -18,7 +18,7 @@ import Foundation
 import P256K
 
 /// secp256k1 elliptic curve wrapper for Ethereum compatibility
-/// Uses the GigaBitcoin/secp256k1.swift library for proper cryptographic operations
+/// Uses the 21-DOT-DEV/swift-secp256k1 library (P256K module) for proper cryptographic operations
 final class Secp256k1 {
 
     // MARK: - Curve Parameters (for reference)

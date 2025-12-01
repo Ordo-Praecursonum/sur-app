@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		CB3482102EDA2F9800F1DD42 /* P256K in Frameworks */ = {isa = PBXBuildFile; productRef = CB34820F2EDA2F9800F1DD42 /* P256K */; };
 		EBD1989D2E9117070026ED7D /* SurKeyboard.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = EBD198962E9117070026ED7D /* SurKeyboard.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		EF4117D8AEA1494FA38A60AD /* CryptoSwift in Frameworks */ = {isa = PBXBuildFile; productRef = 02C771E7B1474303945AF7D1 /* CryptoSwift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -108,6 +109,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				CB3482102EDA2F9800F1DD42 /* P256K in Frameworks */,
+				EF4117D8AEA1494FA38A60AD /* CryptoSwift in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -299,6 +301,7 @@
 			packageReferences = (
 				EBD198A52E91462A0026ED7D /* XCRemoteSwiftPackageReference "swift-crypto" */,
 				CB3481D92EDA2CA000F1DD42 /* XCRemoteSwiftPackageReference "swift-secp256k1" */,
+				D3617E03BB184FDAA13F9D00 /* XCRemoteSwiftPackageReference "CryptoSwift" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = EBD198552E90F8650026ED7D /* Products */;
@@ -760,6 +763,14 @@
 				minimumVersion = 0.21.1;
 			};
 		};
+		D3617E03BB184FDAA13F9D00 /* XCRemoteSwiftPackageReference "CryptoSwift" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/krzyzanowskim/CryptoSwift.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 1.8.0;
+			};
+		};
 		EBD198A52E91462A0026ED7D /* XCRemoteSwiftPackageReference "swift-crypto" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/apple/swift-crypto.git";
@@ -771,6 +782,11 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		02C771E7B1474303945AF7D1 /* CryptoSwift */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = D3617E03BB184FDAA13F9D00 /* XCRemoteSwiftPackageReference "CryptoSwift" */;
+			productName = CryptoSwift;
+		};
 		CB34820F2EDA2F9800F1DD42 /* P256K */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = CB3481D92EDA2CA000F1DD42 /* XCRemoteSwiftPackageReference "swift-secp256k1" */;
