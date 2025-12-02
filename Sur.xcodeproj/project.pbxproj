@@ -7,6 +7,9 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		EB558ED92EDF1B74006BE85D /* CryptoSwift in Frameworks */ = {isa = PBXBuildFile; productRef = EB558ED82EDF1B74006BE85D /* CryptoSwift */; };
+		EB558EDC2EDF1C16006BE85D /* P256K in Frameworks */ = {isa = PBXBuildFile; productRef = EB558EDB2EDF1C16006BE85D /* P256K */; };
+		EB558EE02EDF1C16006BE85D /* libsecp256k1 in Frameworks */ = {isa = PBXBuildFile; productRef = EB558EDF2EDF1C16006BE85D /* libsecp256k1 */; };
 		EBD1989D2E9117070026ED7D /* SurKeyboard.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = EBD198962E9117070026ED7D /* SurKeyboard.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
 
@@ -106,6 +109,9 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				EB558ED92EDF1B74006BE85D /* CryptoSwift in Frameworks */,
+				EB558EDC2EDF1C16006BE85D /* P256K in Frameworks */,
+				EB558EE02EDF1C16006BE85D /* libsecp256k1 in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -133,6 +139,13 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		CB34820E2EDA2F9800F1DD42 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
 		EBD1984B2E90F8650026ED7D = {
 			isa = PBXGroup;
 			children = (
@@ -140,6 +153,7 @@
 				EBD198642E90F8680026ED7D /* SurTests */,
 				EBD1986E2E90F8680026ED7D /* SurUITests */,
 				EBD198972E9117070026ED7D /* SurKeyboard */,
+				CB34820E2EDA2F9800F1DD42 /* Frameworks */,
 				EBD198552E90F8650026ED7D /* Products */,
 			);
 			sourceTree = "<group>";
@@ -177,6 +191,9 @@
 			);
 			name = Sur;
 			packageProductDependencies = (
+				EB558ED82EDF1B74006BE85D /* CryptoSwift */,
+				EB558EDB2EDF1C16006BE85D /* P256K */,
+				EB558EDF2EDF1C16006BE85D /* libsecp256k1 */,
 			);
 			productName = Sur;
 			productReference = EBD198542E90F8650026ED7D /* Sur.app */;
@@ -286,8 +303,8 @@
 			mainGroup = EBD1984B2E90F8650026ED7D;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
-				EBD198A42E911E780026ED7D /* XCRemoteSwiftPackageReference "web3" */,
-				EBD198A52E91462A0026ED7D /* XCRemoteSwiftPackageReference "swift-crypto" */,
+				EB558ED72EDF1B74006BE85D /* XCRemoteSwiftPackageReference "CryptoSwift" */,
+				EB558EDA2EDF1C16006BE85D /* XCRemoteSwiftPackageReference "swift-secp256k1" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = EBD198552E90F8650026ED7D /* Products */;
@@ -741,23 +758,41 @@
 /* End XCConfigurationList section */
 
 /* Begin XCRemoteSwiftPackageReference section */
-		EBD198A42E911E780026ED7D /* XCRemoteSwiftPackageReference "web3" */ = {
+		EB558ED72EDF1B74006BE85D /* XCRemoteSwiftPackageReference "CryptoSwift" */ = {
 			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/argentlabs/web3.swift";
+			repositoryURL = "https://github.com/krzyzanowskim/CryptoSwift.git";
 			requirement = {
 				kind = upToNextMajorVersion;
-				minimumVersion = 1.6.1;
+				minimumVersion = 1.9.0;
 			};
 		};
-		EBD198A52E91462A0026ED7D /* XCRemoteSwiftPackageReference "swift-crypto" */ = {
+		EB558EDA2EDF1C16006BE85D /* XCRemoteSwiftPackageReference "swift-secp256k1" */ = {
 			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/apple/swift-crypto.git";
+			repositoryURL = "https://github.com/21-DOT-DEV/swift-secp256k1.git";
 			requirement = {
 				kind = upToNextMajorVersion;
-				minimumVersion = 3.15.1;
+				minimumVersion = 0.21.1;
 			};
 		};
 /* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		EB558ED82EDF1B74006BE85D /* CryptoSwift */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = EB558ED72EDF1B74006BE85D /* XCRemoteSwiftPackageReference "CryptoSwift" */;
+			productName = CryptoSwift;
+		};
+		EB558EDB2EDF1C16006BE85D /* P256K */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = EB558EDA2EDF1C16006BE85D /* XCRemoteSwiftPackageReference "swift-secp256k1" */;
+			productName = P256K;
+		};
+		EB558EDF2EDF1C16006BE85D /* libsecp256k1 */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = EB558EDA2EDF1C16006BE85D /* XCRemoteSwiftPackageReference "swift-secp256k1" */;
+			productName = libsecp256k1;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = EBD1984C2E90F8650026ED7D /* Project object */;
 }
