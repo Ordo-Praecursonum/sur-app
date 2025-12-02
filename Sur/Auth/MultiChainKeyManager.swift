@@ -77,14 +77,16 @@ final class MultiChainKeyManager {
         // Convert mnemonic to seed
         let seed = try MnemonicGenerator.mnemonicToSeed(mnemonic)
         
-        // Derive the master key
-        let masterKey = try deriveMasterKey(from: seed)
+        // Derive the master key (use SLIP-10 for Ed25519 curves like Solana)
+        let useSlip10 = !network.usesSecp256k1
+        let masterKey = try deriveMasterKey(from: seed, useSlip10: useSlip10)
         
         // Derive child key using BIP-44 path for the network
         let derivedKey = try deriveKeyAtPath(
             masterPrivateKey: masterKey.privateKey,
             masterChainCode: masterKey.chainCode,
-            path: network.pathComponents
+            path: network.pathComponents,
+            useSlip10: useSlip10
         )
         
         // Generate address based on the network type
@@ -130,14 +132,21 @@ final class MultiChainKeyManager {
     
     // MARK: - Private Methods - BIP-32 Key Derivation
     
-    /// Derive master key from seed using HMAC-SHA512 (BIP-32)
-    private static func deriveMasterKey(from seed: Data) throws -> (privateKey: Data, chainCode: Data) {
+    /// Derive master key from seed using HMAC-SHA512 (BIP-32 or SLIP-10)
+    /// - Parameters:
+    ///   - seed: 64-byte BIP-39 seed
+    ///   - useSlip10: Use SLIP-10 for Ed25519 curves (e.g., Solana)
+    /// - Returns: Master private key and chain code
+    private static func deriveMasterKey(from seed: Data, useSlip10: Bool) throws -> (privateKey: Data, chainCode: Data) {
         guard seed.count == 64 else {
             throw MultiChainKeyError.invalidSeed
         }
         
-        // Use "Bitcoin seed" as the key for HMAC (BIP-32 standard)
-        let key = "Bitcoin seed".data(using: .utf8)!
+        // Use appropriate HMAC key based on curve type
+        // SLIP-10: "ed25519 seed" for Ed25519 curves
+        // BIP-32: "Bitcoin seed" for secp256k1 curves
+        let hmacKey = useSlip10 ? "ed25519 seed" : "Bitcoin seed"
+        let key = hmacKey.data(using: .utf8)!
         
         // HMAC-SHA512
         let hmac = HMAC<SHA512>.authenticationCode(for: seed, using: SymmetricKey(data: key))
@@ -150,8 +159,16 @@ final class MultiChainKeyManager {
         let chainCode = Data(hmacData.suffix(32))
         
         // Validate private key
-        guard isValidPrivateKey(privateKey) else {
-            throw MultiChainKeyError.derivationFailed
+        if useSlip10 {
+            // For Ed25519 (SLIP-10): basic validation - must be 32 bytes and not all zeros
+            guard privateKey.count == 32 && !privateKey.allSatisfy({ $0 == 0 }) else {
+                throw MultiChainKeyError.derivationFailed
+            }
+        } else {
+            // For secp256k1 (BIP-32): validate against curve order
+            guard isValidPrivateKey(privateKey) else {
+                throw MultiChainKeyError.derivationFailed
+            }
         }
         
         return (privateKey, chainCode)
@@ -162,11 +179,13 @@ final class MultiChainKeyManager {
     ///   - masterPrivateKey: 32-byte master private key
     ///   - masterChainCode: 32-byte master chain code
     ///   - path: Array of path indices (hardened indices have 0x80000000 added)
+    ///   - useSlip10: Use SLIP-10 for Ed25519 curves
     /// - Returns: Derived private key and chain code
     private static func deriveKeyAtPath(
         masterPrivateKey: Data,
         masterChainCode: Data,
-        path: [UInt32]
+        path: [UInt32],
+        useSlip10: Bool
     ) throws -> (privateKey: Data, chainCode: Data) {
         var currentKey = masterPrivateKey
         var currentChainCode = masterChainCode
@@ -179,7 +198,8 @@ final class MultiChainKeyManager {
                 parentPrivateKey: currentKey,
                 parentChainCode: currentChainCode,
                 index: index,
-                hardened: isHardened
+                hardened: isHardened,
+                useSlip10: useSlip10
             )
             
             currentKey = childKey
@@ -189,18 +209,20 @@ final class MultiChainKeyManager {
         return (currentKey, currentChainCode)
     }
     
-    /// Derive a single child key (BIP-32)
+    /// Derive a single child key (BIP-32 or SLIP-10)
     /// - Parameters:
     ///   - parentPrivateKey: Parent private key
     ///   - parentChainCode: Parent chain code
     ///   - index: Child index
     ///   - hardened: Whether this is a hardened derivation
+    ///   - useSlip10: Use SLIP-10 for Ed25519 curves
     /// - Returns: Child private key and chain code
     private static func deriveChildKey(
         parentPrivateKey: Data,
         parentChainCode: Data,
         index: UInt32,
-        hardened: Bool
+        hardened: Bool,
+        useSlip10: Bool
     ) throws -> (privateKey: Data, chainCode: Data) {
         var data = Data()
         
@@ -209,9 +231,11 @@ final class MultiChainKeyManager {
             data.append(0x00)
             data.append(parentPrivateKey)
         } else {
-            // Normal child: parent_public_key || index
-            // For now, we'll use a simplified approach with the private key
-            // In production, this should use the compressed public key
+            // Normal (non-hardened) child: parent_public_key || index (BIP-32 only)
+            // SLIP-10 for Ed25519 only supports hardened derivation
+            if useSlip10 {
+                throw MultiChainKeyError.invalidDerivationPath
+            }
             let publicKey = try generatePublicKeyBytes(from: parentPrivateKey)
             data.append(publicKey)
         }
@@ -233,11 +257,21 @@ final class MultiChainKeyManager {
         // Last 32 bytes are the new chain code
         let childChainCode = Data(hmacData.suffix(32))
         
-        // Add parent key to derived key (mod n for secp256k1)
-        let childKey = try addPrivateKeys(parentPrivateKey, keyData)
-        
-        guard isValidPrivateKey(childKey) else {
-            throw MultiChainKeyError.derivationFailed
+        // Key derivation differs between SLIP-10 and BIP-32:
+        // SLIP-10 (Ed25519): child_key = IL (first 32 bytes of HMAC output)
+        // BIP-32 (secp256k1): child_key = (IL + parent_key) mod n
+        let childKey: Data
+        if useSlip10 {
+            // SLIP-10 for Ed25519: Use HMAC output directly as private key
+            // No addition of parent key (unlike BIP-32)
+            childKey = keyData
+        } else {
+            // BIP-32 for secp256k1: Add parent key to HMAC output (mod curve order n)
+            childKey = try addPrivateKeys(parentPrivateKey, keyData)
+            
+            guard isValidPrivateKey(childKey) else {
+                throw MultiChainKeyError.derivationFailed
+            }
         }
         
         return (childKey, childChainCode)
@@ -274,7 +308,7 @@ final class MultiChainKeyManager {
     /// Generate address from private key for a specific network
     private static func generateAddress(from privateKey: Data, network: BlockchainNetwork) throws -> String {
         switch network {
-        case .ethereum, .originTrail, .bsc:
+        case .ethereum, .originTrail, .bsc, .base:
             return try generateEthereumAddress(from: privateKey)
         case .bitcoin:
             return try generateBitcoinAddress(from: privateKey)
@@ -314,66 +348,58 @@ final class MultiChainKeyManager {
         return checksumEthereumAddress(addressHex)
     }
     
-    /// Generate Bitcoin address from private key (P2PKH format)
-    /// Uses secp256k1 for public key derivation
-    /// Note: Uses SHA256 twice as a simplified placeholder for SHA256+RIPEMD160
+    /// Generate Bitcoin address from private key (P2WPKH format - native SegWit)
+    /// Uses secp256k1 for public key derivation and Bech32 encoding
     private static func generateBitcoinAddress(from privateKey: Data) throws -> String {
         // Generate compressed public key using secp256k1
         guard let compressedPublicKey = Secp256k1.deriveCompressedPublicKey(from: privateKey) else {
             throw MultiChainKeyError.invalidPrivateKey
         }
         
-        // SHA256 then RIPEMD160 (using SHA256 twice as simplified placeholder)
-        // Note: For full Bitcoin compatibility, RIPEMD-160 should be used
+        // SHA256 then RIPEMD-160 (proper Bitcoin hash160)
         let sha256Hash = SHA256.hash(data: compressedPublicKey)
-        let hash160 = SHA256.hash(data: Data(sha256Hash)).prefix(20)
+        let hash160 = RIPEMD160.hash(Data(sha256Hash))
         
-        // Add version byte (0x00 for mainnet P2PKH)
-        var addressData = Data([0x00])
-        addressData.append(contentsOf: hash160)
+        // P2WPKH: witness version 0 with 20-byte hash as witness program
+        // Encode using Bech32 with "bc" HRP (Human Readable Part) for Bitcoin mainnet
+        guard let address = Bech32.encodeSegWit(hrp: "bc", witnessVersion: 0, witnessProgram: hash160) else {
+            throw MultiChainKeyError.addressGenerationFailed
+        }
         
-        // Double SHA256 for checksum
-        let checksum1 = SHA256.hash(data: addressData)
-        let checksum2 = SHA256.hash(data: Data(checksum1))
-        addressData.append(contentsOf: checksum2.prefix(4))
-        
-        // Base58 encode
-        return base58Encode(addressData)
+        return address
     }
     
     /// Generate Cosmos address from private key
-    /// Uses secp256k1 for public key derivation
-    /// Note: Uses SHA256 twice as a simplified placeholder for SHA256+RIPEMD160
+    /// Uses secp256k1 for public key derivation and proper Bech32 encoding
     private static func generateCosmosAddress(from privateKey: Data) throws -> String {
         // Generate compressed public key using secp256k1
         guard let compressedPublicKey = Secp256k1.deriveCompressedPublicKey(from: privateKey) else {
             throw MultiChainKeyError.invalidPrivateKey
         }
         
-        // SHA256 then RIPEMD160 (using SHA256 twice as simplified placeholder)
+        // SHA256 then RIPEMD-160 (proper Cosmos hash160)
         let sha256Hash = SHA256.hash(data: compressedPublicKey)
-        let hash160 = Data(SHA256.hash(data: Data(sha256Hash))).prefix(20)
+        let hash160 = RIPEMD160.hash(Data(sha256Hash))
         
         // Bech32 encode with "cosmos" prefix
-        return bech32Encode(hrp: "cosmos", data: Data(hash160))
+        guard let address = Bech32.encode(hrp: "cosmos", data: hash160) else {
+            throw MultiChainKeyError.addressGenerationFailed
+        }
+        
+        return address
     }
     
     /// Generate Solana address from private key
-    /// Note: Solana uses Ed25519, this is a placeholder implementation
-    /// For full Solana compatibility, Ed25519 key derivation should be used
+    /// Solana uses Ed25519, where the public key IS the address
     private static func generateSolanaAddress(from privateKey: Data) throws -> String {
-        // Solana uses Ed25519, the public key IS the address
-        // This uses secp256k1 as a placeholder - production should use Ed25519
-        guard let compressedPublicKey = Secp256k1.deriveCompressedPublicKey(from: privateKey) else {
+        // For Solana, use Ed25519 key derivation
+        // The private key from BIP-32 is used as the seed for Ed25519
+        guard let publicKey = Ed25519.derivePublicKey(from: privateKey) else {
             throw MultiChainKeyError.invalidPrivateKey
         }
         
-        // Use a hash to generate a 32-byte "public key" for Solana format
-        // Note: For full Solana compatibility, use Ed25519
-        let hash = SHA256.hash(data: compressedPublicKey)
-        
-        // Base58 encode (Solana addresses are base58 encoded 32-byte public keys)
-        return base58Encode(Data(hash))
+        // Base58 encode the 32-byte public key (Solana addresses are base58 encoded Ed25519 public keys)
+        return base58Encode(publicKey)
     }
     
     /// Generate Tron address from private key
@@ -480,39 +506,5 @@ final class MultiChainKeyManager {
         return result
     }
     
-    /// Simplified Bech32 encoding
-    private static func bech32Encode(hrp: String, data: Data) -> String {
-        // This is a simplified implementation
-        // Production should use a proper Bech32 library
-        let alphabet = "qpzry9x8gf2tvdw0s3jn54khce6mua7l"
-        let alphabetArray = Array(alphabet)
-        
-        // Convert data to 5-bit groups
-        var bits: [UInt8] = []
-        var acc: UInt16 = 0
-        var accBits: Int = 0
-        
-        for byte in data {
-            acc = (acc << 8) | UInt16(byte)
-            accBits += 8
-            while accBits >= 5 {
-                accBits -= 5
-                bits.append(UInt8((acc >> accBits) & 31))
-            }
-        }
-        if accBits > 0 {
-            bits.append(UInt8((acc << (5 - accBits)) & 31))
-        }
-        
-        // Encode to bech32 characters
-        var result = hrp + "1"
-        for bit in bits {
-            result.append(alphabetArray[Int(bit)])
-        }
-        
-        // Add checksum (simplified - production should compute proper checksum)
-        result += "xxxxxx"
-        
-        return result
-    }
+
 }

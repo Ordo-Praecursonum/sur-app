@@ -253,10 +253,225 @@ struct SurTests {
         // Should be in format "0x1234...5678"
         #expect(shortened == "0x1234...5678")
     }
+    
+    // MARK: - Bitcoin Address Tests
+    
+    @Test func testBitcoinAddressGeneration() async throws {
+        // Well-known test mnemonic from BIP-39 test vectors
+        // This should produce a predictable Bitcoin address
+        let testMnemonic = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
+        
+        // Generate Bitcoin address
+        let (_, address) = try MultiChainKeyManager.generateKeysForNetwork(testMnemonic, network: .bitcoin)
+        
+        // Bitcoin P2WPKH (native SegWit) addresses start with 'bc1'
+        #expect(address.hasPrefix("bc1"))
+        
+        // Bitcoin Bech32 addresses are 42-62 characters
+        #expect(address.count >= 42 && address.count <= 62)
+        
+        // Verify it's a valid Bech32 string (lowercase alphanumeric from Bech32 charset)
+        let bech32Chars = "qpzry9x8gf2tvdw0s3jn54khce6mua7l"
+        let datapart = String(address.dropFirst(3)) // Remove "bc1"
+        let isValidBech32 = datapart.allSatisfy { bech32Chars.contains($0) }
+        #expect(isValidBech32)
+    }
+    
+    @Test func testBitcoinAddressMatchesStandardWallet() async throws {
+        // Test vector: Known mnemonic should produce known Bitcoin address
+        // Reference: Using m/84'/0'/0'/0/0 derivation path (BIP-84 for native SegWit)
+        let testMnemonic = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
+        
+        // Expected address for this mnemonic at m/84'/0'/0'/0/0 (P2WPKH/Bech32)
+        // Can be verified using Ian Coleman's BIP39 tool with BIP84 tab
+        let expectedAddress = "bc1qcr8te4kr6gch7z8stxu842stf3d85zw027pnp9"
+        
+        let (_, address) = try MultiChainKeyManager.generateKeysForNetwork(testMnemonic, network: .bitcoin)
+        
+        #expect(address == expectedAddress, "Bitcoin address should match standard wallet derivation")
+    }
+    
+    // MARK: - Cosmos Address Tests
+    
+    @Test func testCosmosAddressGeneration() async throws {
+        // Test Cosmos address generation
+        let testMnemonic = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
+        
+        // Generate Cosmos address
+        let (_, address) = try MultiChainKeyManager.generateKeysForNetwork(testMnemonic, network: .cosmos)
+        
+        // Cosmos addresses start with "cosmos1"
+        #expect(address.hasPrefix("cosmos1"))
+        
+        // Cosmos addresses are 45 characters (cosmos1 + 38 chars)
+        #expect(address.count == 45)
+        
+        // Verify it's a valid Bech32 string (uses specific 32-character alphabet)
+        let bech32Chars = "qpzry9x8gf2tvdw0s3jn54khce6mua7l"
+        let datapart = String(address.dropFirst(7)) // Remove "cosmos1"
+        let isValidBech32 = datapart.allSatisfy { bech32Chars.contains($0) }
+        #expect(isValidBech32)
+    }
+    
+    @Test func testCosmosAddressMatchesStandardWallet() async throws {
+        // Test vector: Known mnemonic should produce known Cosmos address
+        let testMnemonic = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
+        
+        // Expected address for this mnemonic at m/44'/118'/0'/0/0
+        // Can be verified using Keplr wallet or Cosmostation
+        let expectedAddress = "cosmos1r5v5srda7xfth3hn2s26txvrcrntldjumt8mhl"
+        
+        let (_, address) = try MultiChainKeyManager.generateKeysForNetwork(testMnemonic, network: .cosmos)
+        
+        #expect(address == expectedAddress, "Cosmos address should match Keplr wallet derivation")
+    }
+    
+    // MARK: - Solana Address Tests
+    
+    @Test func testSolanaAddressGeneration() async throws {
+        // Test Solana address generation
+        let testMnemonic = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
+        
+        // Generate Solana address
+        let (_, address) = try MultiChainKeyManager.generateKeysForNetwork(testMnemonic, network: .solana)
+        
+        // Solana addresses are base58 encoded (32 bytes = ~43-44 chars in base58)
+        #expect(address.count >= 32 && address.count <= 44)
+        
+        // Verify it's a valid base58 string
+        let base58Chars = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
+        let isValidBase58 = address.allSatisfy { base58Chars.contains($0) }
+        #expect(isValidBase58)
+    }
+    
+    @Test func testSolanaAddressMatchesStandardWallet() async throws {
+        // Test vector: Known mnemonic should produce known Solana address
+        let testMnemonic = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
+        
+        // Expected address for this mnemonic at m/44'/501'/0'/0'
+        // Can be verified using Phantom or Solflare wallet
+        // Note: Solana derivation uses Ed25519 and hardened derivation
+        let expectedAddress = "DRpbCBMxVnDK7maPM5tGv6MvB3v1sRMC86PZ8okm21hy"
+        
+        let (_, address) = try MultiChainKeyManager.generateKeysForNetwork(testMnemonic, network: .solana)
+        
+        #expect(address == expectedAddress, "Solana address should match Phantom wallet derivation")
+    }
+    
+    // MARK: - Base Network Tests
+    
+    @Test func testBaseNetworkAddressGeneration() async throws {
+        // Test Base network address generation
+        let testMnemonic = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
+        
+        // Generate Base address
+        let (_, address) = try MultiChainKeyManager.generateKeysForNetwork(testMnemonic, network: .base)
+        
+        // Base uses Ethereum-compatible addresses
+        #expect(address.hasPrefix("0x"))
+        #expect(address.count == 42)
+        
+        // Verify it's a valid hex string (after 0x prefix)
+        let hexPart = String(address.dropFirst(2))
+        let isValidHex = hexPart.allSatisfy { $0.isHexDigit }
+        #expect(isValidHex)
+    }
+    
+    @Test func testBaseAddressMatchesEthereum() async throws {
+        // Base uses the same derivation path as Ethereum (m/44'/60'/0'/0/0)
+        // So it should produce the same address as Ethereum
+        let testMnemonic = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
+        
+        let (_, ethAddress) = try MultiChainKeyManager.generateKeysForNetwork(testMnemonic, network: .ethereum)
+        let (_, baseAddress) = try MultiChainKeyManager.generateKeysForNetwork(testMnemonic, network: .base)
+        
+        #expect(ethAddress.lowercased() == baseAddress.lowercased(), "Base should use same address as Ethereum")
+    }
+    
+    // MARK: - RIPEMD-160 Tests
+    
+    @Test func testRIPEMD160EmptyString() async throws {
+        // Known test vector: RIPEMD-160 of empty string
+        // Expected: 9c1185a5c5e9fc54612808977ee8f548b2258d31
+        let emptyData = Data()
+        let hash = RIPEMD160.hash(emptyData)
+        let hashHex = hash.map { String(format: "%02x", $0) }.joined()
+        
+        #expect(hashHex == "9c1185a5c5e9fc54612808977ee8f548b2258d31")
+    }
+    
+    @Test func testRIPEMD160KnownVector() async throws {
+        // Known test vector: RIPEMD-160 of "abc"
+        // Expected: 8eb208f7e05d987a9b044a8e98c6b087f15a0bfc
+        let data = "abc".data(using: .utf8)!
+        let hash = RIPEMD160.hash(data)
+        let hashHex = hash.map { String(format: "%02x", $0) }.joined()
+        
+        #expect(hashHex == "8eb208f7e05d987a9b044a8e98c6b087f15a0bfc")
+    }
+    
+    // MARK: - Bech32 Tests
+    
+    @Test func testBech32Encoding() async throws {
+        // Test basic Bech32 encoding
+        let data = Data([0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09,
+                        0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10, 0x11, 0x12, 0x13])
+        
+        guard let encoded = Bech32.encode(hrp: "cosmos", data: data) else {
+            throw TestError.bech32EncodingFailed
+        }
+        
+        #expect(encoded.hasPrefix("cosmos1"))
+        #expect(encoded.count > 7) // More than just "cosmos1"
+    }
+    
+    @Test func testBech32RoundTrip() async throws {
+        // Test encoding and decoding round trip
+        let originalData = Data([0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09,
+                                0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10, 0x11, 0x12, 0x13])
+        
+        guard let encoded = Bech32.encode(hrp: "cosmos", data: originalData) else {
+            throw TestError.bech32EncodingFailed
+        }
+        
+        guard let (hrp, decodedData) = Bech32.decode(encoded) else {
+            throw TestError.bech32DecodingFailed
+        }
+        
+        #expect(hrp == "cosmos")
+        #expect(decodedData == originalData)
+    }
+    
+    // MARK: - Ed25519 Tests
+    
+    @Test func testEd25519KeyDerivation() async throws {
+        // Test Ed25519 public key derivation from a 32-byte seed
+        let seed = Data(repeating: 0x01, count: 32)
+        
+        guard let publicKey = Ed25519.derivePublicKey(from: seed) else {
+            throw TestError.ed25519KeyDerivationFailed
+        }
+        
+        // Ed25519 public keys are 32 bytes
+        #expect(publicKey.count == 32)
+    }
+    
+    @Test func testEd25519SeedValidation() async throws {
+        // Valid seed (32 bytes)
+        let validSeed = Data(repeating: 0x01, count: 32)
+        #expect(Ed25519.isValidSeed(validSeed))
+        
+        // Invalid seed (wrong length)
+        let invalidSeed = Data(repeating: 0x01, count: 16)
+        #expect(!Ed25519.isValidSeed(invalidSeed))
+    }
 }
 
 // MARK: - Test Helpers
 
 enum TestError: Error {
     case publicKeyDerivationFailed
+    case bech32EncodingFailed
+    case bech32DecodingFailed
+    case ed25519KeyDerivationFailed
 }
