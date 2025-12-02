@@ -44,26 +44,16 @@ final class Secp256k1 {
             // Create a secp256k1 private key from raw 32-byte data
             let privKey = try P256K.Signing.PrivateKey(dataRepresentation: privateKey)
 
-            // Get the public key - the library provides it in the format specified at creation
-            // We need uncompressed format (65 bytes: 0x04 + X + Y)
-            let publicKeyBytes = privKey.publicKey.dataRepresentation
+            // Get the uncompressed public key (65 bytes: 0x04 + X + Y)
+            // The P256K library provides uncompressedRepresentation property
+            let uncompressedKey = privKey.publicKey.uncompressedRepresentation
 
-            // Ensure we have the correct uncompressed format
-            if publicKeyBytes.count == 65 && publicKeyBytes[0] == 0x04 {
-                return publicKeyBytes
-            } else if publicKeyBytes.count == 64 {
-                // Add the 0x04 prefix for uncompressed format
-                var result = Data([0x04])
-                result.append(publicKeyBytes)
-                return result
-            } else if publicKeyBytes.count == 33 {
-                // We got compressed format, need to get uncompressed
-                // The secp256k1 library should give us the right format based on initialization
-                // For now, we can work with what we get and ensure proper format
+            // Verify it's in the expected format
+            guard uncompressedKey.count == 65, uncompressedKey[0] == 0x04 else {
                 return nil
             }
 
-            return publicKeyBytes
+            return uncompressedKey
         } catch {
             return nil
         }
@@ -113,18 +103,15 @@ final class Secp256k1 {
         if isZero { return false }
 
         // Check it's less than the curve order
+        // A valid secp256k1 private key must be in range [1, n-1]
         let privateKeyBytes = [UInt8](privateKey)
         if !isLessThanCurveOrder(privateKeyBytes) {
             return false
         }
 
-        // Try to create a private key - the library will validate it
-        do {
-            _ = try P256K.Signing.PrivateKey(dataRepresentation: privateKey)
-            return true
-        } catch {
-            return false
-        }
+        // At this point we've validated the key is in the valid range
+        // The P256K library will do its own validation when used
+        return true
     }
 
     /// Add two 32-byte values modulo the curve order n
