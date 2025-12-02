@@ -158,8 +158,14 @@ final class MultiChainKeyManager {
         // Last 32 bytes are the chain code
         let chainCode = Data(hmacData.suffix(32))
         
-        // Validate private key (for secp256k1 only)
-        if !useSlip10 {
+        // Validate private key
+        if useSlip10 {
+            // For Ed25519 (SLIP-10): basic validation - must be 32 bytes and not all zeros
+            guard privateKey.count == 32 && !privateKey.allSatisfy({ $0 == 0 }) else {
+                throw MultiChainKeyError.derivationFailed
+            }
+        } else {
+            // For secp256k1 (BIP-32): validate against curve order
             guard isValidPrivateKey(privateKey) else {
                 throw MultiChainKeyError.derivationFailed
             }
