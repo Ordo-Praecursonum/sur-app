@@ -18,6 +18,7 @@ enum BlockchainNetwork: String, CaseIterable, Identifiable, Codable {
     case cosmos = "cosmos"
     case solana = "solana"
     case originTrail = "origintrail"
+    case base = "base"
     
     var id: String { rawValue }
     
@@ -38,6 +39,8 @@ enum BlockchainNetwork: String, CaseIterable, Identifiable, Codable {
             return "Solana"
         case .originTrail:
             return "OriginTrail"
+        case .base:
+            return "Base"
         }
     }
     
@@ -58,6 +61,8 @@ enum BlockchainNetwork: String, CaseIterable, Identifiable, Codable {
             return "SOL"
         case .originTrail:
             return "TRAC"
+        case .base:
+            return "ETH"
         }
     }
     
@@ -79,6 +84,8 @@ enum BlockchainNetwork: String, CaseIterable, Identifiable, Codable {
             return 501     // m/44'/501'/...
         case .originTrail:
             return 60      // OriginTrail uses Ethereum derivation path (ERC-20 token)
+        case .base:
+            return 60      // Base uses same as Ethereum (EVM compatible)
         }
     }
     
@@ -100,6 +107,8 @@ enum BlockchainNetwork: String, CaseIterable, Identifiable, Codable {
             return "m/44'/501'/0'/0'"  // Solana uses hardened at all levels
         case .originTrail:
             return "m/44'/60'/0'/0/0"  // Same as Ethereum (ERC-20)
+        case .base:
+            return "m/44'/60'/0'/0/0"  // Same as Ethereum (EVM compatible)
         }
     }
     
@@ -120,6 +129,8 @@ enum BlockchainNetwork: String, CaseIterable, Identifiable, Codable {
             return "s.circle.fill"
         case .originTrail:
             return "point.3.filled.connected.trianglepath.dotted"
+        case .base:
+            return "cube.fill"
         }
     }
     
@@ -140,13 +151,15 @@ enum BlockchainNetwork: String, CaseIterable, Identifiable, Codable {
             return Color(red: 0.60, green: 0.30, blue: 0.90)  // Solana purple
         case .originTrail:
             return Color(red: 0.06, green: 0.51, blue: 0.89)  // OriginTrail blue
+        case .base:
+            return Color(red: 0.00, green: 0.33, blue: 1.00)  // Base blue
         }
     }
     
     /// Address prefix (for display/validation)
     var addressPrefix: String {
         switch self {
-        case .ethereum, .originTrail, .bsc:
+        case .ethereum, .originTrail, .bsc, .base:
             return "0x"
         case .bitcoin:
             return ""  // Bitcoin addresses have various prefixes (1, 3, bc1)
@@ -162,7 +175,7 @@ enum BlockchainNetwork: String, CaseIterable, Identifiable, Codable {
     /// Whether this network uses the secp256k1 curve
     var usesSecp256k1: Bool {
         switch self {
-        case .ethereum, .bitcoin, .cosmos, .originTrail, .bsc, .tron:
+        case .ethereum, .bitcoin, .cosmos, .originTrail, .bsc, .tron, .base:
             return true
         case .solana:
             return false  // Solana uses Ed25519
@@ -175,7 +188,7 @@ enum BlockchainNetwork: String, CaseIterable, Identifiable, Codable {
         let hardenedOffset: UInt32 = 0x80000000
         
         switch self {
-        case .ethereum, .originTrail, .bsc:
+        case .ethereum, .originTrail, .bsc, .base:
             return [
                 44 + hardenedOffset,     // purpose (hardened)
                 60 + hardenedOffset,     // coin_type (hardened)

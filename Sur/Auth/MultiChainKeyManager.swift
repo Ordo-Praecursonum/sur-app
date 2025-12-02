@@ -274,7 +274,7 @@ final class MultiChainKeyManager {
     /// Generate address from private key for a specific network
     private static func generateAddress(from privateKey: Data, network: BlockchainNetwork) throws -> String {
         switch network {
-        case .ethereum, .originTrail, .bsc:
+        case .ethereum, .originTrail, .bsc, .base:
             return try generateEthereumAddress(from: privateKey)
         case .bitcoin:
             return try generateBitcoinAddress(from: privateKey)
@@ -315,22 +315,20 @@ final class MultiChainKeyManager {
     }
     
     /// Generate Bitcoin address from private key (P2PKH format)
-    /// Uses secp256k1 for public key derivation
-    /// Note: Uses SHA256 twice as a simplified placeholder for SHA256+RIPEMD160
+    /// Uses secp256k1 for public key derivation and proper SHA256+RIPEMD-160 hash
     private static func generateBitcoinAddress(from privateKey: Data) throws -> String {
         // Generate compressed public key using secp256k1
         guard let compressedPublicKey = Secp256k1.deriveCompressedPublicKey(from: privateKey) else {
             throw MultiChainKeyError.invalidPrivateKey
         }
         
-        // SHA256 then RIPEMD160 (using SHA256 twice as simplified placeholder)
-        // Note: For full Bitcoin compatibility, RIPEMD-160 should be used
+        // SHA256 then RIPEMD-160 (proper Bitcoin hash160)
         let sha256Hash = SHA256.hash(data: compressedPublicKey)
-        let hash160 = SHA256.hash(data: Data(sha256Hash)).prefix(20)
+        let hash160 = RIPEMD160.hash(Data(sha256Hash))
         
         // Add version byte (0x00 for mainnet P2PKH)
         var addressData = Data([0x00])
-        addressData.append(contentsOf: hash160)
+        addressData.append(hash160)
         
         // Double SHA256 for checksum
         let checksum1 = SHA256.hash(data: addressData)
@@ -342,38 +340,36 @@ final class MultiChainKeyManager {
     }
     
     /// Generate Cosmos address from private key
-    /// Uses secp256k1 for public key derivation
-    /// Note: Uses SHA256 twice as a simplified placeholder for SHA256+RIPEMD160
+    /// Uses secp256k1 for public key derivation and proper Bech32 encoding
     private static func generateCosmosAddress(from privateKey: Data) throws -> String {
         // Generate compressed public key using secp256k1
         guard let compressedPublicKey = Secp256k1.deriveCompressedPublicKey(from: privateKey) else {
             throw MultiChainKeyError.invalidPrivateKey
         }
         
-        // SHA256 then RIPEMD160 (using SHA256 twice as simplified placeholder)
+        // SHA256 then RIPEMD-160 (proper Cosmos hash160)
         let sha256Hash = SHA256.hash(data: compressedPublicKey)
-        let hash160 = Data(SHA256.hash(data: Data(sha256Hash))).prefix(20)
+        let hash160 = RIPEMD160.hash(Data(sha256Hash))
         
         // Bech32 encode with "cosmos" prefix
-        return bech32Encode(hrp: "cosmos", data: Data(hash160))
+        guard let address = Bech32.encode(hrp: "cosmos", data: hash160) else {
+            throw MultiChainKeyError.addressGenerationFailed
+        }
+        
+        return address
     }
     
     /// Generate Solana address from private key
-    /// Note: Solana uses Ed25519, this is a placeholder implementation
-    /// For full Solana compatibility, Ed25519 key derivation should be used
+    /// Solana uses Ed25519, where the public key IS the address
     private static func generateSolanaAddress(from privateKey: Data) throws -> String {
-        // Solana uses Ed25519, the public key IS the address
-        // This uses secp256k1 as a placeholder - production should use Ed25519
-        guard let compressedPublicKey = Secp256k1.deriveCompressedPublicKey(from: privateKey) else {
+        // For Solana, use Ed25519 key derivation
+        // The private key from BIP-32 is used as the seed for Ed25519
+        guard let publicKey = Ed25519.derivePublicKey(from: privateKey) else {
             throw MultiChainKeyError.invalidPrivateKey
         }
         
-        // Use a hash to generate a 32-byte "public key" for Solana format
-        // Note: For full Solana compatibility, use Ed25519
-        let hash = SHA256.hash(data: compressedPublicKey)
-        
-        // Base58 encode (Solana addresses are base58 encoded 32-byte public keys)
-        return base58Encode(Data(hash))
+        // Base58 encode the 32-byte public key (Solana addresses are base58 encoded Ed25519 public keys)
+        return base58Encode(publicKey)
     }
     
     /// Generate Tron address from private key
@@ -480,39 +476,5 @@ final class MultiChainKeyManager {
         return result
     }
     
-    /// Simplified Bech32 encoding
-    private static func bech32Encode(hrp: String, data: Data) -> String {
-        // This is a simplified implementation
-        // Production should use a proper Bech32 library
-        let alphabet = "qpzry9x8gf2tvdw0s3jn54khce6mua7l"
-        let alphabetArray = Array(alphabet)
-        
-        // Convert data to 5-bit groups
-        var bits: [UInt8] = []
-        var acc: UInt16 = 0
-        var accBits: Int = 0
-        
-        for byte in data {
-            acc = (acc << 8) | UInt16(byte)
-            accBits += 8
-            while accBits >= 5 {
-                accBits -= 5
-                bits.append(UInt8((acc >> accBits) & 31))
-            }
-        }
-        if accBits > 0 {
-            bits.append(UInt8((acc << (5 - accBits)) & 31))
-        }
-        
-        // Encode to bech32 characters
-        var result = hrp + "1"
-        for bit in bits {
-            result.append(alphabetArray[Int(bit)])
-        }
-        
-        // Add checksum (simplified - production should compute proper checksum)
-        result += "xxxxxx"
-        
-        return result
-    }
+
 }
