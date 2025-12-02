@@ -305,10 +305,10 @@ struct SurTests {
         // Cosmos addresses are 45 characters (cosmos1 + 38 chars)
         #expect(address.count == 45)
         
-        // Verify it's a valid Bech32 string (lowercase alphanumeric)
+        // Verify it's a valid Bech32 string (uses specific 32-character alphabet)
         let bech32Chars = "qpzry9x8gf2tvdw0s3jn54khce6mua7l"
         let datapart = String(address.dropFirst(7)) // Remove "cosmos1"
-        let isValidBech32 = datapart.allSatisfy { bech32Chars.contains($0) || $0.isNumber }
+        let isValidBech32 = datapart.allSatisfy { bech32Chars.contains($0) }
         #expect(isValidBech32)
     }
     

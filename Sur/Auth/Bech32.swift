@@ -136,11 +136,19 @@ struct Bech32 {
     private static func expandHrp(_ hrp: String) -> [UInt8] {
         var result = [UInt8]()
         for char in hrp {
-            result.append(UInt8(char.asciiValue! >> 5))
+            guard let asciiValue = char.asciiValue else {
+                // Non-ASCII character, skip or handle error
+                continue
+            }
+            result.append(UInt8(asciiValue >> 5))
         }
         result.append(0)
         for char in hrp {
-            result.append(UInt8(char.asciiValue! & 31))
+            guard let asciiValue = char.asciiValue else {
+                // Non-ASCII character, skip or handle error
+                continue
+            }
+            result.append(UInt8(asciiValue & 31))
         }
         return result
     }

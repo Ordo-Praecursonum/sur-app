@@ -15,12 +15,12 @@ struct RIPEMD160 {
     /// - Parameter data: Input data to hash
     /// - Returns: 20-byte RIPEMD-160 hash
     static func hash(_ data: Data) -> Data {
-        var bytes = [UInt8](data)
-        return Data(ripemd160(&bytes, bytes.count))
+        let bytes = [UInt8](data)
+        return Data(ripemd160(bytes))
     }
     
     /// RIPEMD-160 implementation
-    private static func ripemd160(_ message: UnsafePointer<UInt8>, _ length: Int) -> [UInt8] {
+    private static func ripemd160(_ message: [UInt8]) -> [UInt8] {
         // Initialize state
         var h0: UInt32 = 0x67452301
         var h1: UInt32 = 0xEFCDAB89
@@ -29,10 +29,8 @@ struct RIPEMD160 {
         var h4: UInt32 = 0xC3D2E1F0
         
         // Prepare message padding
-        var paddedMessage = [UInt8](repeating: 0, count: length)
-        for i in 0..<length {
-            paddedMessage[i] = message[i]
-        }
+        let length = message.count
+        var paddedMessage = message
         
         // Append padding
         paddedMessage.append(0x80)
