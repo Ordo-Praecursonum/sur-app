@@ -89,14 +89,14 @@ enum BlockchainNetwork: String, CaseIterable, Identifiable, Codable {
         }
     }
     
-    /// Full BIP-44 derivation path
+    /// Full BIP-44/BIP-84 derivation path
     /// Format: m / purpose' / coin_type' / account' / change / address_index
     var derivationPath: String {
         switch self {
         case .ethereum:
             return "m/44'/60'/0'/0/0"
         case .bitcoin:
-            return "m/44'/0'/0'/0/0"
+            return "m/84'/0'/0'/0/0"  // BIP-84 for native SegWit (P2WPKH)
         case .bsc:
             return "m/44'/60'/0'/0/0"  // Same as Ethereum (EVM compatible)
         case .tron:
@@ -162,7 +162,7 @@ enum BlockchainNetwork: String, CaseIterable, Identifiable, Codable {
         case .ethereum, .originTrail, .bsc, .base:
             return "0x"
         case .bitcoin:
-            return ""  // Bitcoin addresses have various prefixes (1, 3, bc1)
+            return "bc1"  // Bitcoin native SegWit (P2WPKH) addresses start with bc1
         case .tron:
             return "T"  // Tron addresses start with T
         case .cosmos:
@@ -198,7 +198,7 @@ enum BlockchainNetwork: String, CaseIterable, Identifiable, Codable {
             ]
         case .bitcoin:
             return [
-                44 + hardenedOffset,     // purpose (hardened)
+                84 + hardenedOffset,     // purpose (hardened) - BIP-84 for native SegWit
                 0 + hardenedOffset,      // coin_type (hardened)
                 0 + hardenedOffset,      // account (hardened)
                 0,                        // change (not hardened)

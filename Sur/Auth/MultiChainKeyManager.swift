@@ -314,8 +314,8 @@ final class MultiChainKeyManager {
         return checksumEthereumAddress(addressHex)
     }
     
-    /// Generate Bitcoin address from private key (P2PKH format)
-    /// Uses secp256k1 for public key derivation and proper SHA256+RIPEMD-160 hash
+    /// Generate Bitcoin address from private key (P2WPKH format - native SegWit)
+    /// Uses secp256k1 for public key derivation and Bech32 encoding
     private static func generateBitcoinAddress(from privateKey: Data) throws -> String {
         // Generate compressed public key using secp256k1
         guard let compressedPublicKey = Secp256k1.deriveCompressedPublicKey(from: privateKey) else {
@@ -326,17 +326,17 @@ final class MultiChainKeyManager {
         let sha256Hash = SHA256.hash(data: compressedPublicKey)
         let hash160 = RIPEMD160.hash(Data(sha256Hash))
         
-        // Add version byte (0x00 for mainnet P2PKH)
-        var addressData = Data([0x00])
-        addressData.append(hash160)
+        // P2WPKH: OP_0 (0x00) followed by 20-byte hash
+        // For Bech32, we need witness version 0 and the 20-byte hash
+        var witnessProgram = Data([0x00]) // Witness version 0
+        witnessProgram.append(hash160)
         
-        // Double SHA256 for checksum
-        let checksum1 = SHA256.hash(data: addressData)
-        let checksum2 = SHA256.hash(data: Data(checksum1))
-        addressData.append(contentsOf: checksum2.prefix(4))
+        // Encode using Bech32 with "bc" HRP (Human Readable Part) for Bitcoin mainnet
+        guard let address = Bech32.encode(hrp: "bc", data: hash160) else {
+            throw MultiChainKeyError.addressGenerationFailed
+        }
         
-        // Base58 encode
-        return base58Encode(addressData)
+        return address
     }
     
     /// Generate Cosmos address from private key

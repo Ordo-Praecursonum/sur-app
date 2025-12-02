@@ -264,26 +264,27 @@ struct SurTests {
         // Generate Bitcoin address
         let (_, address) = try MultiChainKeyManager.generateKeysForNetwork(testMnemonic, network: .bitcoin)
         
-        // Bitcoin P2PKH addresses start with '1'
-        #expect(address.hasPrefix("1"))
+        // Bitcoin P2WPKH (native SegWit) addresses start with 'bc1'
+        #expect(address.hasPrefix("bc1"))
         
-        // Bitcoin addresses are typically 26-35 characters
-        #expect(address.count >= 26 && address.count <= 35)
+        // Bitcoin Bech32 addresses are 42-62 characters
+        #expect(address.count >= 42 && address.count <= 62)
         
-        // Verify it's a valid base58 string
-        let base58Chars = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
-        let isValidBase58 = address.allSatisfy { base58Chars.contains($0) }
-        #expect(isValidBase58)
+        // Verify it's a valid Bech32 string (lowercase alphanumeric from Bech32 charset)
+        let bech32Chars = "qpzry9x8gf2tvdw0s3jn54khce6mua7l"
+        let datapart = String(address.dropFirst(3)) // Remove "bc1"
+        let isValidBech32 = datapart.allSatisfy { bech32Chars.contains($0) }
+        #expect(isValidBech32)
     }
     
     @Test func testBitcoinAddressMatchesStandardWallet() async throws {
         // Test vector: Known mnemonic should produce known Bitcoin address
-        // Reference: Using m/44'/0'/0'/0/0 derivation path
+        // Reference: Using m/84'/0'/0'/0/0 derivation path (BIP-84 for native SegWit)
         let testMnemonic = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
         
-        // Expected address for this mnemonic at m/44'/0'/0'/0/0
-        // Can be verified using Ian Coleman's BIP39 tool or Electrum wallet
-        let expectedAddress = "1LqBGSKuX5yYUonjxT5qGfpUsXKYYWeabA"
+        // Expected address for this mnemonic at m/84'/0'/0'/0/0 (P2WPKH/Bech32)
+        // Can be verified using Ian Coleman's BIP39 tool with BIP84 tab
+        let expectedAddress = "bc1qcr8te4kr6gch7z8stxu842stf3d85zw027pnp9"
         
         let (_, address) = try MultiChainKeyManager.generateKeysForNetwork(testMnemonic, network: .bitcoin)
         
