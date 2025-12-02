@@ -225,8 +225,8 @@ final class MultiChainKeyManager {
             data.append(0x00)
             data.append(parentPrivateKey)
         } else {
-            // Normal child: parent_public_key || index
-            // Note: SLIP-10 for Ed25519 only supports hardened derivation
+            // Normal (non-hardened) child: parent_public_key || index (BIP-32 only)
+            // SLIP-10 for Ed25519 only supports hardened derivation
             if useSlip10 {
                 throw MultiChainKeyError.invalidDerivationPath
             }
@@ -251,14 +251,16 @@ final class MultiChainKeyManager {
         // Last 32 bytes are the new chain code
         let childChainCode = Data(hmacData.suffix(32))
         
-        // For SLIP-10 Ed25519, the key IS the derived key (no addition)
-        // For BIP-32 secp256k1, add parent key to derived key (mod n)
+        // Key derivation differs between SLIP-10 and BIP-32:
+        // SLIP-10 (Ed25519): child_key = IL (first 32 bytes of HMAC output)
+        // BIP-32 (secp256k1): child_key = (IL + parent_key) mod n
         let childKey: Data
         if useSlip10 {
-            // SLIP-10 for Ed25519: use keyData directly as the private key
+            // SLIP-10 for Ed25519: Use HMAC output directly as private key
+            // No addition of parent key (unlike BIP-32)
             childKey = keyData
         } else {
-            // BIP-32 for secp256k1: Add parent key to derived key (mod n)
+            // BIP-32 for secp256k1: Add parent key to HMAC output (mod curve order n)
             childKey = try addPrivateKeys(parentPrivateKey, keyData)
             
             guard isValidPrivateKey(childKey) else {
