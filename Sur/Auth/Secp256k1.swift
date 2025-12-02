@@ -13,6 +13,8 @@
 //  - Uncompressed public key: 65 bytes (0x04 + X + Y)
 //  - Compressed public key: 33 bytes (0x02 or 0x03 + X)
 //
+//  FIXED: Improved compressed public key handling, validation, and addModN operation
+//
 
 import Foundation
 import P256K
@@ -38,11 +40,19 @@ final class Secp256k1 {
     /// - Parameter privateKey: 32-byte private key data
     /// - Returns: 65-byte uncompressed public key (0x04 + X + Y) or nil if invalid
     static func derivePublicKey(from privateKey: Data) -> Data? {
-        guard privateKey.count == 32 else { 
+        guard privateKey.count == 32 else {
             #if DEBUG
             print("[Secp256k1] Invalid private key length: \(privateKey.count), expected 32")
             #endif
-            return nil 
+            return nil
+        }
+
+        // Quick validation before attempting to create key
+        guard isValidPrivateKey(privateKey) else {
+            #if DEBUG
+            print("[Secp256k1] Private key validation failed")
+            #endif
+            return nil
         }
 
         do {
@@ -50,7 +60,6 @@ final class Secp256k1 {
             let privKey = try P256K.Signing.PrivateKey(dataRepresentation: privateKey)
 
             // Get the uncompressed public key (65 bytes: 0x04 + X + Y)
-            // The P256K library provides uncompressedRepresentation property
             let uncompressedKey = privKey.publicKey.uncompressedRepresentation
 
             // Verify it's in the expected format
@@ -74,42 +83,79 @@ final class Secp256k1 {
     /// - Parameter privateKey: 32-byte private key data
     /// - Returns: 33-byte compressed public key (0x02/0x03 + X) or nil if invalid
     static func deriveCompressedPublicKey(from privateKey: Data) -> Data? {
-        guard privateKey.count == 32 else { return nil }
+        guard privateKey.count == 32 else {
+            #if DEBUG
+            print("[Secp256k1] Invalid private key length: \(privateKey.count), expected 32")
+            #endif
+            return nil
+        }
+
+        // Quick validation before attempting to create key
+        guard isValidPrivateKey(privateKey) else {
+            #if DEBUG
+            print("[Secp256k1] Private key validation failed for compressed key derivation")
+            #endif
+            return nil
+        }
 
         do {
             // Create a secp256k1 private key from raw 32-byte data
             let privKey = try P256K.Signing.PrivateKey(dataRepresentation: privateKey)
 
-            // Get the public key in compressed format (33 bytes: 0x02/0x03 + X)
+            // Get the public key representation
             let publicKeyBytes = privKey.publicKey.dataRepresentation
 
-            // Handle different output formats
+            // Handle different output formats from the library
             if publicKeyBytes.count == 33 {
+                // Already compressed, verify format
+                let prefix = publicKeyBytes[0]
+                guard prefix == 0x02 || prefix == 0x03 else {
+                    #if DEBUG
+                    print("[Secp256k1] Invalid compressed public key prefix: 0x\(String(format: "%02x", prefix))")
+                    #endif
+                    return nil
+                }
                 return publicKeyBytes
             } else if publicKeyBytes.count == 65 {
+                // Uncompressed format (0x04 + X + Y), need to compress
+                guard publicKeyBytes[0] == 0x04 else {
+                    #if DEBUG
+                    print("[Secp256k1] Invalid uncompressed public key prefix: 0x\(String(format: "%02x", publicKeyBytes[0]))")
+                    #endif
+                    return nil
+                }
+                
                 // Convert uncompressed to compressed
-                // First byte of uncompressed is 0x04
-                // Compressed prefix is 0x02 if Y is even, 0x03 if Y is odd
-                let yLastByte = publicKeyBytes[64]
+                // Compressed format: prefix (0x02 or 0x03) + X coordinate (32 bytes)
+                // Prefix is 0x02 if Y is even, 0x03 if Y is odd
+                let yLastByte = publicKeyBytes[64]  // Last byte of Y coordinate
                 let prefix: UInt8 = (yLastByte & 1) == 0 ? 0x02 : 0x03
+                
                 var compressed = Data([prefix])
-                compressed.append(publicKeyBytes[1..<33])
+                compressed.append(publicKeyBytes[1..<33])  // Append X coordinate
+                
                 return compressed
+            } else {
+                #if DEBUG
+                print("[Secp256k1] Unexpected public key length: \(publicKeyBytes.count)")
+                #endif
+                return nil
             }
-
-            return publicKeyBytes
         } catch {
+            #if DEBUG
+            print("[Secp256k1] Failed to derive compressed public key: \(error)")
+            #endif
             return nil
         }
     }
 
     /// Validate private key is in valid range [1, n-1]
-    /// 
+    ///
     /// Note: This validation checks the mathematical constraints for secp256k1:
     /// - Key must be 32 bytes
     /// - Key must not be zero
     /// - Key must be less than the curve order n
-    /// 
+    ///
     /// The P256K library performs additional validation when the key is actually used
     /// for signing operations. We removed redundant P256K validation here because
     /// it was causing false rejections for mathematically valid keys.
@@ -117,16 +163,30 @@ final class Secp256k1 {
     /// - Parameter privateKey: 32-byte private key data
     /// - Returns: true if valid
     static func isValidPrivateKey(_ privateKey: Data) -> Bool {
-        guard privateKey.count == 32 else { return false }
+        guard privateKey.count == 32 else {
+            #if DEBUG
+            print("[Secp256k1] Invalid key length: \(privateKey.count)")
+            #endif
+            return false
+        }
+
+        let privateKeyBytes = [UInt8](privateKey)
 
         // Check it's not all zeros
-        let isZero = privateKey.allSatisfy { $0 == 0 }
-        if isZero { return false }
+        let isZero = privateKeyBytes.allSatisfy { $0 == 0 }
+        if isZero {
+            #if DEBUG
+            print("[Secp256k1] Private key is zero")
+            #endif
+            return false
+        }
 
         // Check it's less than the curve order
         // A valid secp256k1 private key must be in range [1, n-1]
-        let privateKeyBytes = [UInt8](privateKey)
         if !isLessThanCurveOrder(privateKeyBytes) {
+            #if DEBUG
+            print("[Secp256k1] Private key >= curve order")
+            #endif
             return false
         }
 
@@ -135,21 +195,37 @@ final class Secp256k1 {
 
     /// Add two 32-byte values modulo the curve order n
     /// This is needed for BIP-32 key derivation: child = (parent + tweak) mod n
+    ///
+    /// CRITICAL: This function must return a valid private key in range [1, n-1]
+    ///
     /// - Parameters:
     ///   - a: First 32-byte value
     ///   - b: Second 32-byte value
-    /// - Returns: Sum modulo n as 32-byte Data
-    static func addModN(_ a: Data, _ b: Data) -> Data {
+    /// - Returns: Sum modulo n as 32-byte Data, or nil if result would be invalid
+    static func addModN(_ a: Data, _ b: Data) -> Data? {
         guard a.count == 32, b.count == 32 else {
-            return Data(repeating: 0, count: 32)
+            #if DEBUG
+            print("[Secp256k1] Invalid input lengths for addModN: a=\(a.count), b=\(b.count)")
+            #endif
+            return nil
         }
 
-        var result = [UInt8](repeating: 0, count: 33)  // Extra byte for overflow
+        // Convert to byte arrays for arithmetic
         let aBytes = [UInt8](a)
         let bBytes = [UInt8](b)
+        
+        // Validate inputs are less than curve order
+        guard isLessThanCurveOrder(aBytes) && isLessThanCurveOrder(bBytes) else {
+            #if DEBUG
+            print("[Secp256k1] Input values must be less than curve order")
+            #endif
+            return nil
+        }
 
-        // Add with carry, starting from least significant byte
+        // Perform addition with 33 bytes to catch overflow
+        var result = [UInt8](repeating: 0, count: 33)
         var carry: UInt16 = 0
+        
         for i in (0..<32).reversed() {
             let sum = UInt16(aBytes[i]) + UInt16(bBytes[i]) + carry
             result[i + 1] = UInt8(sum & 0xFF)
@@ -157,18 +233,19 @@ final class Secp256k1 {
         }
         result[0] = UInt8(carry)
 
-        // If result >= n, subtract n once (at most once since a,b < n implies a+b < 2n)
-        // Check if we need to reduce by comparing with n (preceded by 0x00)
+        // Determine if we need to reduce modulo n
         var needsReduction = false
         if result[0] > 0 {
+            // Overflow occurred, definitely need reduction
             needsReduction = true
         } else {
-            // Compare the 32-byte portion with curve order
+            // No overflow, but still might be >= n
             let resultPart = Array(result[1...])
             needsReduction = !isLessThanCurveOrder(resultPart)
         }
 
-        var finalResult = Array(result[1...])  // Get the 32-byte portion
+        // Get the 32-byte result
+        var finalResult = Array(result[1...])
 
         if needsReduction {
             // Subtract curve order once
@@ -185,25 +262,63 @@ final class Secp256k1 {
             }
         }
 
-        // Handle zero case (extremely unlikely but possible)
+        // CRITICAL CHECK: Result must not be zero
+        // In BIP-32 derivation, if (parent + tweak) mod n == 0, the derivation fails
+        let resultData = Data(finalResult)
         let isZero = finalResult.allSatisfy { $0 == 0 }
         if isZero {
-            finalResult[31] = 1  // Return 1 instead of 0
+            #if DEBUG
+            print("[Secp256k1] addModN resulted in zero, derivation invalid")
+            #endif
+            return nil  // Return nil instead of modifying to 1
         }
 
-        return Data(finalResult)
+        // Final validation
+        guard isValidPrivateKey(resultData) else {
+            #if DEBUG
+            print("[Secp256k1] addModN result is not a valid private key")
+            #endif
+            return nil
+        }
+
+        return resultData
     }
 
     // MARK: - Private Helpers
 
     /// Check if a 32-byte value is less than the curve order
+    /// Returns true if value < n, false if value >= n
     private static func isLessThanCurveOrder(_ value: [UInt8]) -> Bool {
         guard value.count == 32 else { return false }
 
+        // Compare byte by byte from most significant to least significant
         for i in 0..<32 {
-            if value[i] < curveOrderBytes[i] { return true }
-            if value[i] > curveOrderBytes[i] { return false }
+            if value[i] < curveOrderBytes[i] {
+                return true  // Definitively less than
+            }
+            if value[i] > curveOrderBytes[i] {
+                return false  // Definitively greater than
+            }
+            // If equal, continue to next byte
         }
-        return false  // Equal to curve order
+        
+        // All bytes are equal, so value == n
+        return false
     }
+
+    // MARK: - Utility Functions (for debugging)
+    
+    #if DEBUG
+    /// Convert Data to hex string for debugging
+    static func toHexString(_ data: Data) -> String {
+        return data.map { String(format: "%02x", $0) }.joined()
+    }
+    
+    /// Print key information for debugging
+    static func debugKey(_ privateKey: Data, label: String = "Key") {
+        print("[\(label)] Hex: \(toHexString(privateKey))")
+        print("[\(label)] Valid: \(isValidPrivateKey(privateKey))")
+        print("[\(label)] < n: \(isLessThanCurveOrder([UInt8](privateKey)))")
+    }
+    #endif
 }
