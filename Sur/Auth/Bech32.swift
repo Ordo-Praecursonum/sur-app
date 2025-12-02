@@ -8,7 +8,7 @@
 
 import Foundation
 
-/// Bech32 encoding for Cosmos addresses
+/// Bech32 encoding for Cosmos and Bitcoin addresses
 struct Bech32 {
     
     /// Bech32 character set
@@ -19,14 +19,49 @@ struct Bech32 {
     
     /// Encode data with Bech32
     /// - Parameters:
-    ///   - hrp: Human-readable part (e.g., "cosmos")
-    ///   - data: Data to encode (20 bytes for Cosmos addresses)
+    ///   - hrp: Human-readable part (e.g., "cosmos", "bc")
+    ///   - data: Data to encode (20 bytes for addresses)
     /// - Returns: Bech32-encoded string
     static func encode(hrp: String, data: Data) -> String? {
         // Convert 8-bit data to 5-bit groups
         guard let fiveBitData = convertBits(data: [UInt8](data), fromBits: 8, toBits: 5, pad: true) else {
             return nil
         }
+        
+        // Create checksum
+        let checksum = createChecksum(hrp: hrp, data: fiveBitData)
+        
+        // Combine data and checksum
+        let combined = fiveBitData + checksum
+        
+        // Encode to Bech32 string
+        var result = hrp + "1"
+        for value in combined {
+            guard value < 32 else { return nil }
+            let index = charset.index(charset.startIndex, offsetBy: Int(value))
+            result.append(charset[index])
+        }
+        
+        return result
+    }
+    
+    /// Encode Bitcoin SegWit address with witness version
+    /// - Parameters:
+    ///   - hrp: Human-readable part ("bc" for mainnet)
+    ///   - witnessVersion: Witness version (0-16)
+    ///   - witnessProgram: Witness program data (20 bytes for P2WPKH, 32 bytes for P2WSH)
+    /// - Returns: Bech32-encoded SegWit address
+    static func encodeSegWit(hrp: String, witnessVersion: UInt8, witnessProgram: Data) -> String? {
+        // Witness version must be 0-16
+        guard witnessVersion <= 16 else { return nil }
+        
+        // Convert witness program to 5-bit groups
+        guard let fiveBitProgram = convertBits(data: [UInt8](witnessProgram), fromBits: 8, toBits: 5, pad: true) else {
+            return nil
+        }
+        
+        // Prepend witness version as single 5-bit value
+        var fiveBitData = [witnessVersion] + fiveBitProgram
         
         // Create checksum
         let checksum = createChecksum(hrp: hrp, data: fiveBitData)
