@@ -137,7 +137,7 @@ final class MultiChainKeyManager {
     ///   - seed: 64-byte BIP-39 seed
     ///   - useSlip10: Use SLIP-10 for Ed25519 curves (e.g., Solana)
     /// - Returns: Master private key and chain code
-    private static func deriveMasterKey(from seed: Data, useSlip10: Bool = false) throws -> (privateKey: Data, chainCode: Data) {
+    private static func deriveMasterKey(from seed: Data, useSlip10: Bool) throws -> (privateKey: Data, chainCode: Data) {
         guard seed.count == 64 else {
             throw MultiChainKeyError.invalidSeed
         }
@@ -179,7 +179,7 @@ final class MultiChainKeyManager {
         masterPrivateKey: Data,
         masterChainCode: Data,
         path: [UInt32],
-        useSlip10: Bool = false
+        useSlip10: Bool
     ) throws -> (privateKey: Data, chainCode: Data) {
         var currentKey = masterPrivateKey
         var currentChainCode = masterChainCode
@@ -216,7 +216,7 @@ final class MultiChainKeyManager {
         parentChainCode: Data,
         index: UInt32,
         hardened: Bool,
-        useSlip10: Bool = false
+        useSlip10: Bool
     ) throws -> (privateKey: Data, chainCode: Data) {
         var data = Data()
         
