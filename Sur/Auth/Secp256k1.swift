@@ -38,7 +38,12 @@ final class Secp256k1 {
     /// - Parameter privateKey: 32-byte private key data
     /// - Returns: 65-byte uncompressed public key (0x04 + X + Y) or nil if invalid
     static func derivePublicKey(from privateKey: Data) -> Data? {
-        guard privateKey.count == 32 else { return nil }
+        guard privateKey.count == 32 else { 
+            #if DEBUG
+            print("[Secp256k1] Invalid private key length: \(privateKey.count), expected 32")
+            #endif
+            return nil 
+        }
 
         do {
             // Create a secp256k1 private key from raw 32-byte data
@@ -50,11 +55,17 @@ final class Secp256k1 {
 
             // Verify it's in the expected format
             guard uncompressedKey.count == 65, uncompressedKey[0] == 0x04 else {
+                #if DEBUG
+                print("[Secp256k1] Unexpected public key format: length=\(uncompressedKey.count), prefix=\(uncompressedKey.first ?? 0)")
+                #endif
                 return nil
             }
 
             return uncompressedKey
         } catch {
+            #if DEBUG
+            print("[Secp256k1] Failed to derive public key: \(error)")
+            #endif
             return nil
         }
     }
@@ -93,6 +104,16 @@ final class Secp256k1 {
     }
 
     /// Validate private key is in valid range [1, n-1]
+    /// 
+    /// Note: This validation checks the mathematical constraints for secp256k1:
+    /// - Key must be 32 bytes
+    /// - Key must not be zero
+    /// - Key must be less than the curve order n
+    /// 
+    /// The P256K library performs additional validation when the key is actually used
+    /// for signing operations. We removed redundant P256K validation here because
+    /// it was causing false rejections for mathematically valid keys.
+    ///
     /// - Parameter privateKey: 32-byte private key data
     /// - Returns: true if valid
     static func isValidPrivateKey(_ privateKey: Data) -> Bool {
@@ -109,8 +130,6 @@ final class Secp256k1 {
             return false
         }
 
-        // At this point we've validated the key is in the valid range
-        // The P256K library will do its own validation when used
         return true
     }
 
