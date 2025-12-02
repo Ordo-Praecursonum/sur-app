@@ -326,13 +326,13 @@ final class MultiChainKeyManager {
         let sha256Hash = SHA256.hash(data: compressedPublicKey)
         let hash160 = RIPEMD160.hash(Data(sha256Hash))
         
-        // P2WPKH: OP_0 (0x00) followed by 20-byte hash
-        // For Bech32, we need witness version 0 and the 20-byte hash
+        // P2WPKH: witness version 0 followed by 20-byte hash
+        // For Bech32 encoding, we need to prepend the witness version byte
         var witnessProgram = Data([0x00]) // Witness version 0
         witnessProgram.append(hash160)
         
         // Encode using Bech32 with "bc" HRP (Human Readable Part) for Bitcoin mainnet
-        guard let address = Bech32.encode(hrp: "bc", data: hash160) else {
+        guard let address = Bech32.encode(hrp: "bc", data: witnessProgram) else {
             throw MultiChainKeyError.addressGenerationFailed
         }
         
