@@ -77,14 +77,16 @@ final class MultiChainKeyManager {
         // Convert mnemonic to seed
         let seed = try MnemonicGenerator.mnemonicToSeed(mnemonic)
         
-        // Derive the master key
-        let masterKey = try deriveMasterKey(from: seed)
+        // Derive the master key (use SLIP-10 for Ed25519 curves like Solana)
+        let useSlip10 = !network.usesSecp256k1
+        let masterKey = try deriveMasterKey(from: seed, useSlip10: useSlip10)
         
         // Derive child key using BIP-44 path for the network
         let derivedKey = try deriveKeyAtPath(
             masterPrivateKey: masterKey.privateKey,
             masterChainCode: masterKey.chainCode,
-            path: network.pathComponents
+            path: network.pathComponents,
+            useSlip10: useSlip10
         )
         
         // Generate address based on the network type
@@ -130,14 +132,21 @@ final class MultiChainKeyManager {
     
     // MARK: - Private Methods - BIP-32 Key Derivation
     
-    /// Derive master key from seed using HMAC-SHA512 (BIP-32)
-    private static func deriveMasterKey(from seed: Data) throws -> (privateKey: Data, chainCode: Data) {
+    /// Derive master key from seed using HMAC-SHA512 (BIP-32 or SLIP-10)
+    /// - Parameters:
+    ///   - seed: 64-byte BIP-39 seed
+    ///   - useSlip10: Use SLIP-10 for Ed25519 curves (e.g., Solana)
+    /// - Returns: Master private key and chain code
+    private static func deriveMasterKey(from seed: Data, useSlip10: Bool) throws -> (privateKey: Data, chainCode: Data) {
         guard seed.count == 64 else {
             throw MultiChainKeyError.invalidSeed
         }
         
-        // Use "Bitcoin seed" as the key for HMAC (BIP-32 standard)
-        let key = "Bitcoin seed".data(using: .utf8)!
+        // Use appropriate HMAC key based on curve type
+        // SLIP-10: "ed25519 seed" for Ed25519 curves
+        // BIP-32: "Bitcoin seed" for secp256k1 curves
+        let hmacKey = useSlip10 ? "ed25519 seed" : "Bitcoin seed"
+        let key = hmacKey.data(using: .utf8)!
         
         // HMAC-SHA512
         let hmac = HMAC<SHA512>.authenticationCode(for: seed, using: SymmetricKey(data: key))
@@ -150,8 +159,16 @@ final class MultiChainKeyManager {
         let chainCode = Data(hmacData.suffix(32))
         
         // Validate private key
-        guard isValidPrivateKey(privateKey) else {
-            throw MultiChainKeyError.derivationFailed
+        if useSlip10 {
+            // For Ed25519 (SLIP-10): basic validation - must be 32 bytes and not all zeros
+            guard privateKey.count == 32 && !privateKey.allSatisfy({ $0 == 0 }) else {
+                throw MultiChainKeyError.derivationFailed
+            }
+        } else {
+            // For secp256k1 (BIP-32): validate against curve order
+            guard isValidPrivateKey(privateKey) else {
+                throw MultiChainKeyError.derivationFailed
+            }
         }
         
         return (privateKey, chainCode)
@@ -162,11 +179,13 @@ final class MultiChainKeyManager {
     ///   - masterPrivateKey: 32-byte master private key
     ///   - masterChainCode: 32-byte master chain code
     ///   - path: Array of path indices (hardened indices have 0x80000000 added)
+    ///   - useSlip10: Use SLIP-10 for Ed25519 curves
     /// - Returns: Derived private key and chain code
     private static func deriveKeyAtPath(
         masterPrivateKey: Data,
         masterChainCode: Data,
-        path: [UInt32]
+        path: [UInt32],
+        useSlip10: Bool
     ) throws -> (privateKey: Data, chainCode: Data) {
         var currentKey = masterPrivateKey
         var currentChainCode = masterChainCode
@@ -179,7 +198,8 @@ final class MultiChainKeyManager {
                 parentPrivateKey: currentKey,
                 parentChainCode: currentChainCode,
                 index: index,
-                hardened: isHardened
+                hardened: isHardened,
+                useSlip10: useSlip10
             )
             
             currentKey = childKey
@@ -189,18 +209,20 @@ final class MultiChainKeyManager {
         return (currentKey, currentChainCode)
     }
     
-    /// Derive a single child key (BIP-32)
+    /// Derive a single child key (BIP-32 or SLIP-10)
     /// - Parameters:
     ///   - parentPrivateKey: Parent private key
     ///   - parentChainCode: Parent chain code
     ///   - index: Child index
     ///   - hardened: Whether this is a hardened derivation
+    ///   - useSlip10: Use SLIP-10 for Ed25519 curves
     /// - Returns: Child private key and chain code
     private static func deriveChildKey(
         parentPrivateKey: Data,
         parentChainCode: Data,
         index: UInt32,
-        hardened: Bool
+        hardened: Bool,
+        useSlip10: Bool
     ) throws -> (privateKey: Data, chainCode: Data) {
         var data = Data()
         
@@ -209,9 +231,11 @@ final class MultiChainKeyManager {
             data.append(0x00)
             data.append(parentPrivateKey)
         } else {
-            // Normal child: parent_public_key || index
-            // For now, we'll use a simplified approach with the private key
-            // In production, this should use the compressed public key
+            // Normal (non-hardened) child: parent_public_key || index (BIP-32 only)
+            // SLIP-10 for Ed25519 only supports hardened derivation
+            if useSlip10 {
+                throw MultiChainKeyError.invalidDerivationPath
+            }
             let publicKey = try generatePublicKeyBytes(from: parentPrivateKey)
             data.append(publicKey)
         }
@@ -233,11 +257,21 @@ final class MultiChainKeyManager {
         // Last 32 bytes are the new chain code
         let childChainCode = Data(hmacData.suffix(32))
         
-        // Add parent key to derived key (mod n for secp256k1)
-        let childKey = try addPrivateKeys(parentPrivateKey, keyData)
-        
-        guard isValidPrivateKey(childKey) else {
-            throw MultiChainKeyError.derivationFailed
+        // Key derivation differs between SLIP-10 and BIP-32:
+        // SLIP-10 (Ed25519): child_key = IL (first 32 bytes of HMAC output)
+        // BIP-32 (secp256k1): child_key = (IL + parent_key) mod n
+        let childKey: Data
+        if useSlip10 {
+            // SLIP-10 for Ed25519: Use HMAC output directly as private key
+            // No addition of parent key (unlike BIP-32)
+            childKey = keyData
+        } else {
+            // BIP-32 for secp256k1: Add parent key to HMAC output (mod curve order n)
+            childKey = try addPrivateKeys(parentPrivateKey, keyData)
+            
+            guard isValidPrivateKey(childKey) else {
+                throw MultiChainKeyError.derivationFailed
+            }
         }
         
         return (childKey, childChainCode)
