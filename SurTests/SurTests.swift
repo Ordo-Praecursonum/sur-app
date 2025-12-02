@@ -143,6 +143,36 @@ struct SurTests {
         #expect(address.lowercased() == expectedAddress.lowercased())
     }
     
+    @Test func testMetaMaskCompatibilityWithSpecificMnemonic() async throws {
+        // Test vector provided by user to verify BIP-32/39/44 implementation
+        // Reference: https://github.com/bitcoin/bips/blob/master/bip-0039.mediawiki
+        let testMnemonic = "crawl boost shadow all movie scatter soul two wedding mask cactus brother"
+        
+        // Expected values (verified with MetaMask)
+        let expectedSeedHex = "a969581a4938024c6f7dd8066bb6e8d46d00b0759615314235b9633e534fe351cb0f0802b28d75388e68da7a49f7e7ff111d03d7b21b5f97e55819a158759f29"
+        let expectedPrivateKeyHex = "35427bdc4aad663235b6b06a60c83236e27767901f727cf0379e51695cb61fd4"
+        let expectedAddress = "0x879DF5268D9343A703D33e55153c26A24FA369f4"
+        
+        // Step 1: Verify BIP-39 seed derivation
+        let seed = try MnemonicGenerator.mnemonicToSeed(testMnemonic)
+        let seedHex = seed.map { String(format: "%02x", $0) }.joined()
+        #expect(seedHex == expectedSeedHex, "BIP-39 seed derivation should match expected value")
+        
+        // Step 2: Verify BIP-32/44 private key derivation (m/44'/60'/0'/0/0)
+        let privateKey = try EthereumKeyManager.derivePrivateKey(from: seed, index: 0)
+        let privateKeyHex = privateKey.map { String(format: "%02x", $0) }.joined()
+        #expect(privateKeyHex == expectedPrivateKeyHex, "BIP-32/44 private key derivation should match expected value")
+        
+        // Step 3: Verify Ethereum address generation (secp256k1 + Keccak-256)
+        let address = try EthereumKeyManager.generateAddress(from: privateKey)
+        #expect(address.lowercased() == expectedAddress.lowercased(), "Ethereum address should match MetaMask")
+        
+        // Step 4: Full flow test using generateKeysFromMnemonic
+        let (fullPrivateKey, fullAddress) = try EthereumKeyManager.generateKeysFromMnemonic(testMnemonic)
+        #expect(fullPrivateKey == privateKey, "Full flow private key should match")
+        #expect(fullAddress.lowercased() == expectedAddress.lowercased(), "Full flow address should match")
+    }
+    
     @Test func testEIP55Checksum() async throws {
         // Test EIP-55 address checksumming
         // Known address should have proper checksum
