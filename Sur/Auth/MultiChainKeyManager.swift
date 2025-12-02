@@ -227,6 +227,9 @@ final class MultiChainKeyManager {
         } else {
             // Normal child: parent_public_key || index
             // Note: SLIP-10 for Ed25519 only supports hardened derivation
+            if useSlip10 {
+                throw MultiChainKeyError.invalidDerivationPath
+            }
             let publicKey = try generatePublicKeyBytes(from: parentPrivateKey)
             data.append(publicKey)
         }
