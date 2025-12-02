@@ -244,28 +244,16 @@ final class MultiChainKeyManager {
     }
     
     /// Add two private keys together (mod curve order)
-    /// This is a simplified implementation
+    /// Uses proper secp256k1 modular arithmetic for BIP-32 child key derivation
+    /// child_key = (parent_key + tweak) mod n
     private static func addPrivateKeys(_ key1: Data, _ key2: Data) throws -> Data {
         guard key1.count == 32 && key2.count == 32 else {
             throw MultiChainKeyError.invalidPrivateKey
         }
         
-        // Convert to big integers and add
-        // For simplicity, we'll use a basic byte-by-byte addition with carry
-        // In production, use proper big integer arithmetic with modulo curve order
-        var result = [UInt8](repeating: 0, count: 32)
-        var carry: UInt16 = 0
-        
-        let bytes1 = [UInt8](key1)
-        let bytes2 = [UInt8](key2)
-        
-        for i in (0..<32).reversed() {
-            let sum = UInt16(bytes1[i]) + UInt16(bytes2[i]) + carry
-            result[i] = UInt8(sum & 0xFF)
-            carry = sum >> 8
-        }
-        
-        return Data(result)
+        // Use proper modular arithmetic from Secp256k1 implementation
+        // This correctly handles overflow and reduction by curve order n
+        return Secp256k1.addModN(key1, key2)
     }
     
     /// Check if private key is valid for secp256k1

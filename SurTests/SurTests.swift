@@ -173,6 +173,25 @@ struct SurTests {
         #expect(fullAddress.lowercased() == expectedAddress.lowercased(), "Full flow address should match")
     }
     
+    @Test func testMultiChainKeyManagerMatchesMetaMask() async throws {
+        // CRITICAL: This test verifies that MultiChainKeyManager (used by the app's wallet creation)
+        // produces the same addresses as EthereumKeyManager and MetaMask
+        let testMnemonic = "crawl boost shadow all movie scatter soul two wedding mask cactus brother"
+        let expectedAddress = "0x879DF5268D9343A703D33e55153c26A24FA369f4"
+        let expectedPrivateKeyHex = "35427bdc4aad663235b6b06a60c83236e27767901f727cf0379e51695cb61fd4"
+        
+        // Test MultiChainKeyManager (this is what the app uses for wallet creation)
+        let (privateKey, address) = try MultiChainKeyManager.generateKeysForNetwork(testMnemonic, network: .ethereum)
+        let privateKeyHex = privateKey.map { String(format: "%02x", $0) }.joined()
+        
+        #expect(privateKeyHex == expectedPrivateKeyHex, "MultiChainKeyManager private key should match MetaMask")
+        #expect(address.lowercased() == expectedAddress.lowercased(), "MultiChainKeyManager address should match MetaMask")
+        
+        // Also verify generateAllAddresses produces the same result
+        let allAddresses = try MultiChainKeyManager.generateAllAddresses(from: testMnemonic)
+        #expect(allAddresses[.ethereum]?.lowercased() == expectedAddress.lowercased(), "generateAllAddresses should match MetaMask")
+    }
+    
     @Test func testEIP55Checksum() async throws {
         // Test EIP-55 address checksumming
         // Known address should have proper checksum
