@@ -308,7 +308,7 @@ final class MultiChainKeyManager {
     /// Generate address from private key for a specific network
     private static func generateAddress(from privateKey: Data, network: BlockchainNetwork) throws -> String {
         switch network {
-        case .ethereum, .originTrail, .bsc, .base:
+        case .ethereum, .originTrail, .bsc, .world:
             return try generateEthereumAddress(from: privateKey)
         case .bitcoin:
             return try generateBitcoinAddress(from: privateKey)

@@ -358,16 +358,16 @@ struct SurTests {
         #expect(address == expectedAddress, "Solana address should match Phantom wallet derivation")
     }
     
-    // MARK: - Base Network Tests
+    // MARK: - World Network Tests
     
-    @Test func testBaseNetworkAddressGeneration() async throws {
-        // Test Base network address generation
+    @Test func testWorldNetworkAddressGeneration() async throws {
+        // Test World network address generation
         let testMnemonic = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
         
-        // Generate Base address
-        let (_, address) = try MultiChainKeyManager.generateKeysForNetwork(testMnemonic, network: .base)
+        // Generate World address
+        let (_, address) = try MultiChainKeyManager.generateKeysForNetwork(testMnemonic, network: .world)
         
-        // Base uses Ethereum-compatible addresses
+        // World uses Ethereum-compatible addresses
         #expect(address.hasPrefix("0x"))
         #expect(address.count == 42)
         
@@ -377,15 +377,15 @@ struct SurTests {
         #expect(isValidHex)
     }
     
-    @Test func testBaseAddressMatchesEthereum() async throws {
-        // Base uses the same derivation path as Ethereum (m/44'/60'/0'/0/0)
+    @Test func testWorldAddressMatchesEthereum() async throws {
+        // World uses the same derivation path as Ethereum (m/44'/60'/0'/0/0)
         // So it should produce the same address as Ethereum
         let testMnemonic = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
         
         let (_, ethAddress) = try MultiChainKeyManager.generateKeysForNetwork(testMnemonic, network: .ethereum)
-        let (_, baseAddress) = try MultiChainKeyManager.generateKeysForNetwork(testMnemonic, network: .base)
+        let (_, worldAddress) = try MultiChainKeyManager.generateKeysForNetwork(testMnemonic, network: .world)
         
-        #expect(ethAddress.lowercased() == baseAddress.lowercased(), "Base should use same address as Ethereum")
+        #expect(ethAddress.lowercased() == worldAddress.lowercased(), "World should use same address as Ethereum")
     }
     
     // MARK: - RIPEMD-160 Tests
