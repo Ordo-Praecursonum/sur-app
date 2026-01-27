@@ -22,7 +22,7 @@ enum DeviceIDError: LocalizedError {
         case .derivationFailed:
             return "Failed to derive device ID"
         case .storageError:
-            return "Failed to store device ID"
+            return "Failed to store device ID in UserDefaults"
         }
     }
 }
@@ -56,6 +56,13 @@ final class DeviceIDManager {
     // MARK: - Public Methods
     
     /// Get or create device UUID
+    ///
+    /// Uses `UIDevice.current.identifierForVendor` which provides a unique ID per app vendor.
+    /// Falls back to `UUID().uuidString` if identifierForVendor is nil, which can happen:
+    /// - On first launch before iOS has assigned a vendor ID
+    /// - When running in simulator without proper configuration
+    /// - After app reinstallation in certain edge cases
+    ///
     /// - Returns: Device UUID string
     func getDeviceUUID() -> String {
         if let existingUUID = UserDefaults.standard.string(forKey: Self.deviceUUIDKey) {
@@ -63,6 +70,7 @@ final class DeviceIDManager {
         }
         
         // Create new UUID for this device
+        // Prefer vendor ID for consistency across app reinstalls, fallback to random UUID
         let newUUID = UIDevice.current.identifierForVendor?.uuidString ?? UUID().uuidString
         UserDefaults.standard.set(newUUID, forKey: Self.deviceUUIDKey)
         return newUUID
