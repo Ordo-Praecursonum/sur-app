@@ -89,6 +89,34 @@ struct AccountView: View {
                                 .buttonStyle(.plain)
                             }
                         }
+                        
+                        // Device Public ID
+                        if let deviceID = authManager.devicePublicID {
+                            Divider()
+                                .padding(.vertical, 8)
+                            
+                            VStack(spacing: 8) {
+                                Text("Device Public ID")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                
+                                Text(authManager.shortDeviceID ?? deviceID)
+                                    .font(.system(.caption, design: .monospaced))
+                                    .multilineTextAlignment(.center)
+                                    .foregroundColor(.primary)
+                                
+                                // Copy button with orange accent
+                                Button(action: { copyDeviceID(deviceID) }) {
+                                    HStack(spacing: 4) {
+                                        Image(systemName: "doc.on.doc")
+                                        Text("Copy Device ID")
+                                    }
+                                    .font(.caption)
+                                    .foregroundColor(.orange)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
                     }
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 16)
@@ -207,6 +235,20 @@ struct AccountView: View {
     
     private func copyAddress(_ address: String) {
         UIPasteboard.general.string = address
+        
+        withAnimation {
+            showCopiedToast = true
+        }
+        
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+            withAnimation {
+                showCopiedToast = false
+            }
+        }
+    }
+    
+    private func copyDeviceID(_ deviceID: String) {
+        UIPasteboard.general.string = deviceID
         
         withAnimation {
             showCopiedToast = true

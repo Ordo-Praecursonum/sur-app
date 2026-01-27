@@ -465,6 +465,97 @@ struct SurTests {
         let invalidSeed = Data(repeating: 0x01, count: 16)
         #expect(!Ed25519.isValidSeed(invalidSeed))
     }
+    
+    // MARK: - Device ID Tests
+    
+    @Test func testDeviceIDGeneration() async throws {
+        // Test device ID generation from user private key
+        let userPrivateKey = Data(repeating: 0x01, count: 32)
+        let deviceIDManager = DeviceIDManager.shared
+        
+        let (privateID, publicID) = try deviceIDManager.generateDeviceIDs(from: userPrivateKey)
+        
+        // Both IDs should be 64 characters (32 bytes in hex)
+        #expect(privateID.count == 64)
+        #expect(publicID.count == 64)
+        
+        // IDs should be valid hex strings
+        let isValidPrivateHex = privateID.allSatisfy { $0.isHexDigit }
+        let isValidPublicHex = publicID.allSatisfy { $0.isHexDigit }
+        #expect(isValidPrivateHex)
+        #expect(isValidPublicHex)
+        
+        // Private and public IDs should be different
+        #expect(privateID != publicID)
+    }
+    
+    @Test func testDeviceIDDeterminism() async throws {
+        // Test that device IDs are deterministic for the same user private key
+        let userPrivateKey = Data(repeating: 0x42, count: 32)
+        let deviceIDManager = DeviceIDManager.shared
+        
+        // Generate IDs twice
+        let (privateID1, publicID1) = try deviceIDManager.generateDeviceIDs(from: userPrivateKey)
+        let (privateID2, publicID2) = try deviceIDManager.generateDeviceIDs(from: userPrivateKey)
+        
+        // IDs should be identical (deterministic)
+        #expect(privateID1 == privateID2)
+        #expect(publicID1 == publicID2)
+    }
+    
+    @Test func testDeviceIDUniqueness() async throws {
+        // Test that different user private keys produce different device IDs
+        let userPrivateKey1 = Data(repeating: 0x01, count: 32)
+        let userPrivateKey2 = Data(repeating: 0x02, count: 32)
+        let deviceIDManager = DeviceIDManager.shared
+        
+        let (privateID1, publicID1) = try deviceIDManager.generateDeviceIDs(from: userPrivateKey1)
+        let (privateID2, publicID2) = try deviceIDManager.generateDeviceIDs(from: userPrivateKey2)
+        
+        // IDs should be different for different user keys
+        #expect(privateID1 != privateID2)
+        #expect(publicID1 != publicID2)
+    }
+    
+    @Test func testDeviceIDInvalidPrivateKey() async throws {
+        // Test that invalid private key throws error
+        let invalidKey = Data(repeating: 0x01, count: 16) // Wrong length
+        let deviceIDManager = DeviceIDManager.shared
+        
+        do {
+            _ = try deviceIDManager.generateDeviceIDs(from: invalidKey)
+            #expect(Bool(false), "Should have thrown error for invalid key")
+        } catch DeviceIDError.invalidPrivateKey {
+            // Expected error
+            #expect(true)
+        } catch {
+            #expect(Bool(false), "Wrong error type thrown")
+        }
+    }
+    
+    @Test func testDeviceIDShortening() async throws {
+        // Test device ID shortening for display
+        let fullID = "d4f2a1234567890abcdef1234567890abcdef1234567890abcdef123456bc8e3f"
+        let shortened = DeviceIDManager.shortenDeviceID(fullID)
+        
+        // Should be in format "d4f2a1...bc8e3f"
+        #expect(shortened == "d4f2a1...bc8e3f")
+    }
+    
+    @Test func testDeviceIDStorageAndRetrieval() async throws {
+        // Test saving and retrieving device public ID
+        let deviceIDManager = DeviceIDManager.shared
+        let testPublicID = "test1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcd"
+        
+        deviceIDManager.saveDevicePublicID(testPublicID)
+        let retrieved = deviceIDManager.getStoredDevicePublicID()
+        
+        #expect(retrieved == testPublicID)
+        
+        // Clean up
+        deviceIDManager.clearDeviceIDs()
+    }
+}
 }
 
 // MARK: - Test Helpers
