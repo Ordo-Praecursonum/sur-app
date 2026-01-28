@@ -226,22 +226,27 @@ final class Secp256k1 {
             // Sign the message hash
             let signature = try privKey.signature(for: messageHash)
             
-            // P256K.Signing.ECDSASignature has rawRepresentation property that gives us
-            // the signature in raw R,S format (64 bytes total: 32 bytes R + 32 bytes S)
-            let rawSig = signature.rawRepresentation
+            // P256K returns DER-encoded signature via dataRepresentation
+            // We need to convert it to raw R,S format (64 bytes: 32R + 32S)
+            let derSig = signature.dataRepresentation
             
             #if DEBUG
-            print("[Secp256k1] Raw signature length: \(rawSig.count)")
-            print("[Secp256k1] Raw signature: \(rawSig.map { String(format: "%02x", $0) }.joined())")
+            print("[Secp256k1] DER signature length: \(derSig.count)")
+            print("[Secp256k1] DER signature: \(derSig.map { String(format: "%02x", $0) }.joined())")
             #endif
             
-            // Verify it's 64 bytes
-            guard rawSig.count == 64 else {
+            // Extract R and S from DER encoding
+            guard let rawSig = extractRSFromDERToRaw(derSig) else {
                 #if DEBUG
-                print("[Secp256k1] Unexpected raw signature length: \(rawSig.count), expected 64")
+                print("[Secp256k1] Failed to extract R,S from DER signature")
                 #endif
                 return nil
             }
+            
+            #if DEBUG
+            print("[Secp256k1] Raw R,S signature length: \(rawSig.count)")
+            print("[Secp256k1] Raw R,S signature: \(rawSig.map { String(format: "%02x", $0) }.joined())")
+            #endif
             
             return rawSig
         } catch {
@@ -286,9 +291,16 @@ final class Secp256k1 {
             // Create P256K public key from uncompressed representation
             let pubKey = try P256K.Signing.PublicKey(x963Representation: publicKey)
             
-            // Create signature from raw R,S representation (64 bytes)
-            // P256K.Signing.ECDSASignature has init(rawRepresentation:) for raw R,S format
-            let sig = try P256K.Signing.ECDSASignature(rawRepresentation: signature)
+            // Convert raw R,S signature (64 bytes) to DER format for P256K
+            guard let derSig = createDERSignature(from: signature) else {
+                #if DEBUG
+                print("[Secp256k1] Failed to convert raw R,S to DER format")
+                #endif
+                return false
+            }
+            
+            // Create P256K signature from DER representation
+            let sig = try P256K.Signing.ECDSASignature(dataRepresentation: derSig)
             
             // Verify the signature
             return pubKey.isValidSignature(sig, for: messageHash)
@@ -302,10 +314,10 @@ final class Secp256k1 {
 
     // MARK: - Private Helpers
     
-    /// Extract R and S values from DER-encoded signature
+    /// Extract R and S values from DER-encoded signature (returns as tuple)
     /// - Parameter der: DER-encoded signature
     /// - Returns: Tuple of (R, S) as 32-byte Data each, or nil if parsing fails
-    private static func extractRSFromDER(_ der: Data) -> (Data, Data)? {
+    private static func extractRSFromDERTuple(_ der: Data) -> (Data, Data)? {
         guard der.count >= 8 else { return nil }
         guard der[0] == 0x30 else { return nil } // DER sequence tag
         
@@ -366,7 +378,7 @@ final class Secp256k1 {
     ///   - r: R value (32 bytes)
     ///   - s: S value (32 bytes)
     /// - Returns: DER-encoded signature or nil if creation fails
-    private static func createDERSignature(r: Data, s: Data) -> Data? {
+    private static func createDERSignatureFromRS(r: Data, s: Data) -> Data? {
         guard r.count == 32, s.count == 32 else { return nil }
         
         // Remove leading zeros from R and S, but keep at least one byte
@@ -409,6 +421,32 @@ final class Secp256k1 {
         
         return result
     }
+
+    /// Extract R and S from DER-encoded signature and return as concatenated 64-byte Data
+    /// - Parameter der: DER-encoded signature
+    /// - Returns: 64-byte Data (32-byte R + 32-byte S) or nil if parsing fails
+    private static func extractRSFromDERToRaw(_ der: Data) -> Data? {
+        guard let (r, s) = extractRSFromDERTuple(der) else { return nil }
+        var result = Data()
+        result.append(r)
+        result.append(s)
+        return result
+    }
+    
+    /// Create DER-encoded signature from 64-byte raw R,S format
+    /// - Parameter rawSignature: 64-byte Data (32-byte R + 32-byte S)
+    /// - Returns: DER-encoded signature or nil if creation fails
+    private static func createDERSignature(from rawSignature: Data) -> Data? {
+        guard rawSignature.count == 64 else { return nil }
+        let r = rawSignature.prefix(32)
+        let s = rawSignature.suffix(32)
+        return createDERSignatureFromRS(r: r, s: s)
+    }
+    
+    /// Extract R and S values from DER-encoded signature (returns as tuple)
+    /// - Parameter der: DER-encoded signature
+    /// - Returns: Tuple of (R, S) as 32-byte Data each, or nil if parsing fails
+    private static func extractRSFromDERTuple(_ der: Data) -> (Data, Data)? {
 
     /// Check if a 32-byte value is less than the curve order
     private static func isLessThanCurveOrder(_ value: [UInt8]) -> Bool {
