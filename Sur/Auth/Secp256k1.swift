@@ -226,29 +226,24 @@ final class Secp256k1 {
             // Sign the message hash
             let signature = try privKey.signature(for: messageHash)
             
-            // P256K returns DER-encoded signature via dataRepresentation
-            // We need to convert it to raw R,S format (64 bytes: 32R + 32S)
-            let derSig = signature.dataRepresentation
+            // Get signature data - P256K returns this in compact format (64 bytes)
+            let sigData = signature.dataRepresentation
             
             #if DEBUG
-            print("[Secp256k1] DER signature length: \(derSig.count)")
-            print("[Secp256k1] DER signature: \(derSig.map { String(format: "%02x", $0) }.joined())")
+            print("[Secp256k1] Signature length: \(sigData.count)")
+            print("[Secp256k1] Signature: \(sigData.map { String(format: "%02x", $0) }.joined())")
             #endif
             
-            // Extract R and S from DER encoding
-            guard let rawSig = extractRSFromDERToRaw(derSig) else {
+            // P256K's dataRepresentation is already in raw R,S format (64 bytes: 32R + 32S)
+            // No need to convert from DER
+            guard sigData.count == 64 else {
                 #if DEBUG
-                print("[Secp256k1] Failed to extract R,S from DER signature")
+                print("[Secp256k1] Signature is not 64 bytes, got \(sigData.count)")
                 #endif
                 return nil
             }
             
-            #if DEBUG
-            print("[Secp256k1] Raw R,S signature length: \(rawSig.count)")
-            print("[Secp256k1] Raw R,S signature: \(rawSig.map { String(format: "%02x", $0) }.joined())")
-            #endif
-            
-            return rawSig
+            return sigData
         } catch {
             #if DEBUG
             print("[Secp256k1] Failed to sign message: \(error)")
@@ -291,16 +286,9 @@ final class Secp256k1 {
             // Create P256K public key from uncompressed representation
             let pubKey = try P256K.Signing.PublicKey(x963Representation: publicKey)
             
-            // Convert raw R,S signature (64 bytes) to DER format for P256K
-            guard let derSig = createDERSignature(from: signature) else {
-                #if DEBUG
-                print("[Secp256k1] Failed to convert raw R,S to DER format")
-                #endif
-                return false
-            }
-            
-            // Create P256K signature from DER representation
-            let sig = try P256K.Signing.ECDSASignature(dataRepresentation: derSig)
+            // Create P256K signature directly from raw 64-byte representation
+            // P256K's dataRepresentation accepts compact 64-byte format (R + S)
+            let sig = try P256K.Signing.ECDSASignature(dataRepresentation: signature)
             
             // Verify the signature
             return pubKey.isValidSignature(sig, for: messageHash)
