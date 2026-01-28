@@ -623,8 +623,8 @@ struct SurTests {
             throw TestError.signingFailed
         }
         
-        // Verify the signature is not empty
-        #expect(signature.count > 0)
+        // Verify the signature is exactly 64 bytes (R + S in compact format)
+        #expect(signature.count == 64)
         
         // Verify the signature with device public key
         let isValid = Secp256k1.verify(signature: signature, for: messageHashData, publicKey: devicePublicKey)
@@ -638,8 +638,8 @@ struct SurTests {
         let wrongMessageHash = SHA256.hash(data: wrongMessageData)
         let wrongMessageHashData = Data(wrongMessageHash)
         
-        let isInvalid = Secp256k1.verify(signature: signature, for: wrongMessageHashData, publicKey: devicePublicKey)
-        #expect(!isInvalid)
+        let isValidWithWrongMessage = Secp256k1.verify(signature: signature, for: wrongMessageHashData, publicKey: devicePublicKey)
+        #expect(!isValidWithWrongMessage)
     }
 }
 }

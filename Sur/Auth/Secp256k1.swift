@@ -196,8 +196,9 @@ final class Secp256k1 {
 
     /// Sign a message hash using secp256k1 ECDSA
     /// 
-    /// This produces a recoverable ECDSA signature that can be verified using the corresponding
-    /// public key. The signature format is compatible with Ethereum and Bitcoin signing.
+    /// This produces an ECDSA signature in compact format (64 bytes: R + S).
+    /// The signature can be verified using the corresponding public key.
+    /// Compatible with Ethereum and Bitcoin ECDSA signing.
     ///
     /// - Parameters:
     ///   - messageHash: 32-byte hash of the message to sign (e.g., SHA-256 or Keccak-256 of message)
@@ -223,10 +224,10 @@ final class Secp256k1 {
             let privKey = try P256K.Signing.PrivateKey(dataRepresentation: privateKey)
             
             // Sign the message hash
-            // P256K uses ECDSA signature which returns DER-encoded signature
+            // Returns compact format signature (64 bytes: R + S)
             let signature = try privKey.signature(for: messageHash)
             
-            // Return the raw signature data (compact format: 64 bytes R+S)
+            // Return the raw signature data in compact format (64 bytes R+S)
             return signature.dataRepresentation
         } catch {
             #if DEBUG
@@ -259,11 +260,7 @@ final class Secp256k1 {
         }
         
         do {
-            // Extract X and Y coordinates (32 bytes each, skip the 0x04 prefix)
-            let x = publicKey[1..<33]
-            let y = publicKey[33..<65]
-            
-            // Create P256K public key from X and Y coordinates
+            // Create P256K public key from uncompressed representation
             let pubKey = try P256K.Signing.PublicKey(x963Representation: publicKey)
             
             // Create signature object from data

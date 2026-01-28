@@ -131,6 +131,7 @@ struct AccountView: View {
                                     .foregroundColor(.orange)
                                 }
                                 .buttonStyle(.plain)
+                                .accessibilityLabel("Sign a message with device private key")
                             }
                         }
                     }
@@ -244,6 +245,13 @@ struct AccountView: View {
                     signature: signedSignature ?? "",
                     message: messageToSign
                 )
+            }
+            .onChange(of: showSignatureResult) { _, newValue in
+                if !newValue {
+                    // Clear sensitive data when sheet is dismissed
+                    messageToSign = ""
+                    signedSignature = nil
+                }
             }
             .alert("Delete Wallet", isPresented: $showDeleteConfirmation) {
                 Button("Cancel", role: .cancel) { }
