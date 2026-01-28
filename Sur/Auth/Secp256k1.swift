@@ -443,11 +443,6 @@ final class Secp256k1 {
         return createDERSignatureFromRS(r: r, s: s)
     }
     
-    /// Extract R and S values from DER-encoded signature (returns as tuple)
-    /// - Parameter der: DER-encoded signature
-    /// - Returns: Tuple of (R, S) as 32-byte Data each, or nil if parsing fails
-    private static func extractRSFromDERTuple(_ der: Data) -> (Data, Data)? {
-
     /// Check if a 32-byte value is less than the curve order
     private static func isLessThanCurveOrder(_ value: [UInt8]) -> Bool {
         guard value.count == 32 else { return false }
