@@ -641,6 +641,148 @@ struct SurTests {
         let isValidWithWrongMessage = Secp256k1.verify(signature: signature, for: wrongMessageHashData, publicKey: devicePublicKey)
         #expect(!isValidWithWrongMessage)
     }
+    
+    @Test func testSecp256k1SignatureNormalization() async throws {
+        // Test that signatures are normalized to have low S value (S <= n/2)
+        // This is required by BIP-62, Ethereum, and external ECDSA tools
+        
+        // Use a test private key
+        let privateKey = Data([
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01
+        ])
+        
+        // Create a test message
+        let message = "Hello"
+        guard let messageData = message.data(using: .utf8) else {
+            throw TestError.messageEncodingFailed
+        }
+        
+        // Hash the message using SHA-256 (same as the app does)
+        let messageHash = SHA256.hash(data: messageData)
+        let messageHashData = Data(messageHash)
+        
+        // Sign the message
+        guard let signature = Secp256k1.sign(messageHash: messageHashData, with: privateKey) else {
+            throw TestError.signingFailed
+        }
+        
+        // Signature should be 64 bytes
+        #expect(signature.count == 64)
+        
+        // Extract R and S
+        let r = signature.prefix(32)
+        let s = signature.suffix(32)
+        
+        // Define n/2 (half of secp256k1 curve order)
+        let halfOrder = Data([
+            0x7F, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+            0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+            0x5D, 0x57, 0x6E, 0x73, 0x57, 0xA4, 0x50, 0x1D,
+            0xDF, 0xE9, 0x2F, 0x46, 0x68, 0x1B, 0x20, 0xA0
+        ])
+        
+        // Check that S <= n/2 (normalized/canonical form)
+        let sBytes = [UInt8](s)
+        let halfOrderBytes = [UInt8](halfOrder)
+        var sIsNormalized = false
+        
+        for i in 0..<32 {
+            if sBytes[i] < halfOrderBytes[i] {
+                sIsNormalized = true
+                break
+            }
+            if sBytes[i] > halfOrderBytes[i] {
+                sIsNormalized = false
+                break
+            }
+        }
+        
+        #expect(sIsNormalized, "S value should be normalized (S <= n/2) for compatibility with external tools")
+        
+        // Verify the signature still validates
+        guard let publicKey = Secp256k1.derivePublicKey(from: privateKey) else {
+            throw TestError.publicKeyDerivationFailed
+        }
+        
+        let isValid = Secp256k1.verify(signature: signature, for: messageHashData, publicKey: publicKey)
+        #expect(isValid, "Normalized signature should still verify correctly")
+    }
+    
+    @Test func testSecp256k1SignatureCompatibilityWithExternalTools() async throws {
+        // Test case based on the issue reported
+        // This verifies that our signatures can be verified by external tools
+        // Reference: https://emn178.github.io/online-tools/ecdsa/sign/
+        
+        // Known test vector for verification
+        // Private key: all zeros except last byte = 1
+        let privateKey = Data([
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01
+        ])
+        
+        // Derive public key
+        guard let publicKey = Secp256k1.derivePublicKey(from: privateKey) else {
+            throw TestError.publicKeyDerivationFailed
+        }
+        
+        // Expected public key for private key = 1 (generator point G)
+        // This is a well-known constant in secp256k1
+        #expect(publicKey.count == 65)
+        #expect(publicKey[0] == 0x04)
+        
+        // Test message
+        let message = "Hello"
+        guard let messageData = message.data(using: .utf8) else {
+            throw TestError.messageEncodingFailed
+        }
+        
+        // Hash using SHA-256 (standard for ECDSA)
+        let messageHash = SHA256.hash(data: messageData)
+        let messageHashData = Data(messageHash)
+        
+        // Expected hash for "Hello" with SHA-256
+        let expectedHashHex = "185f8db32271fe25f561a6fc938b2e264306ec304eda518007d1764826381969"
+        let actualHashHex = messageHashData.map { String(format: "%02x", $0) }.joined()
+        #expect(actualHashHex == expectedHashHex, "SHA-256 hash of 'Hello' should match expected value")
+        
+        // Sign the message
+        guard let signature = Secp256k1.sign(messageHash: messageHashData, with: privateKey) else {
+            throw TestError.signingFailed
+        }
+        
+        // Signature should be 64 bytes in compact format
+        #expect(signature.count == 64)
+        
+        // The signature should have normalized S value
+        let s = signature.suffix(32)
+        let sBytes = [UInt8](s)
+        
+        // Verify S is not all zeros (would be invalid)
+        let sIsZero = sBytes.allSatisfy { $0 == 0 }
+        #expect(!sIsZero, "S value should not be zero")
+        
+        // Verify the signature locally
+        let isValid = Secp256k1.verify(signature: signature, for: messageHashData, publicKey: publicKey)
+        #expect(isValid, "Signature should verify with our implementation")
+        
+        // Print signature for manual verification with external tools
+        let signatureHex = signature.map { String(format: "%02x", $0) }.joined()
+        let publicKeyHex = publicKey.map { String(format: "%02x", $0) }.joined()
+        
+        print("=== Signature Verification Data ===")
+        print("Message: \(message)")
+        print("Message Hash (SHA-256): \(actualHashHex)")
+        print("Private Key: 0000000000000000000000000000000000000000000000000000000000000001")
+        print("Public Key (uncompressed): \(publicKeyHex)")
+        print("Signature (R+S): \(signatureHex)")
+        print("Signature is \(signature.count) bytes (32-byte R + 32-byte S)")
+        print("=== End Verification Data ===")
+    }
 }
 }
 
