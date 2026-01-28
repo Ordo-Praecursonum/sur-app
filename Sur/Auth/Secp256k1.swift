@@ -197,13 +197,14 @@ final class Secp256k1 {
     /// Sign a message hash using secp256k1 ECDSA
     /// 
     /// This produces an ECDSA signature in compact format (64 bytes: R + S).
-    /// The signature can be verified using the corresponding public key.
-    /// Compatible with Ethereum and Bitcoin ECDSA signing.
+    /// The signature is normalized to ensure S is in the lower half of the curve order (S <= n/2),
+    /// which is required by Bitcoin Core (BIP-62), Ethereum, and most ECDSA verification tools.
+    /// This ensures compatibility with external tools and validators.
     ///
     /// - Parameters:
     ///   - messageHash: 32-byte hash of the message to sign (e.g., SHA-256 or Keccak-256 of message)
     ///   - privateKey: 32-byte private key data
-    /// - Returns: Signature data (64 bytes: R + S in compact format) or nil if signing fails
+    /// - Returns: Signature data (64 bytes: R + S in compact format with normalized S) or nil if signing fails
     static func sign(messageHash: Data, with privateKey: Data) -> Data? {
         guard messageHash.count == 32 else {
             #if DEBUG
@@ -243,7 +244,18 @@ final class Secp256k1 {
                 return nil
             }
             
-            return sigData
+            // Normalize the S value to ensure it's in the lower half of the curve order
+            // This is required by BIP-62 (Bitcoin), Ethereum, and most ECDSA tools
+            let normalizedSig = normalizeSignature(sigData)
+            
+            #if DEBUG
+            if normalizedSig != sigData {
+                print("[Secp256k1] S value normalized for canonical signature")
+                print("[Secp256k1] Normalized signature: \(normalizedSig.map { String(format: "%02x", $0) }.joined())")
+            }
+            #endif
+            
+            return normalizedSig
         } catch {
             #if DEBUG
             print("[Secp256k1] Failed to sign message: \(error)")
@@ -440,5 +452,70 @@ final class Secp256k1 {
             if value[i] > curveOrderBytes[i] { return false }
         }
         return false  // Equal to curve order
+    }
+    
+    /// Check if S value is greater than n/2 (half of curve order)
+    /// ECDSA signatures with S > n/2 should be normalized to n - S
+    /// This is required by BIP-62, Ethereum, and most ECDSA verification tools
+    private static func isHighS(_ s: [UInt8]) -> Bool {
+        guard s.count == 32 else { return false }
+        
+        // n/2 = 0x7FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF5D576E7357A4501DDFE92F46681B20A0
+        // This is exactly half of the secp256k1 curve order
+        let halfOrder: [UInt8] = [
+            0x7F, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+            0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+            0x5D, 0x57, 0x6E, 0x73, 0x57, 0xA4, 0x50, 0x1D,
+            0xDF, 0xE9, 0x2F, 0x46, 0x68, 0x1B, 0x20, 0xA0
+        ]
+        
+        // Check if s > n/2
+        for i in 0..<32 {
+            if s[i] < halfOrder[i] { return false }
+            if s[i] > halfOrder[i] { return true }
+        }
+        return false  // Equal to n/2 (use as-is)
+    }
+    
+    /// Normalize signature to have low S value (S <= n/2)
+    /// ECDSA allows two valid S values: s or n - s
+    /// Standards (BIP-62, Ethereum) require using the lower value
+    /// - Parameter signature: 64-byte signature (R + S)
+    /// - Returns: 64-byte signature with normalized S value
+    private static func normalizeSignature(_ signature: Data) -> Data {
+        guard signature.count == 64 else { return signature }
+        
+        let r = signature.prefix(32)
+        let s = signature.suffix(32)
+        let sBytes = [UInt8](s)
+        
+        // Check if S is in the high range (S > n/2)
+        if !isHighS(sBytes) {
+            // S is already low, return as-is
+            return signature
+        }
+        
+        // S is high, compute n - S to get the canonical low S value
+        var normalizedS = [UInt8](repeating: 0, count: 32)
+        var borrow: Int16 = 0
+        
+        // Subtract: normalizedS = n - s
+        for i in (0..<32).reversed() {
+            let diff = Int16(curveOrderBytes[i]) - Int16(sBytes[i]) - borrow
+            if diff < 0 {
+                normalizedS[i] = UInt8((diff + 256) & 0xFF)
+                borrow = 1
+            } else {
+                normalizedS[i] = UInt8(diff & 0xFF)
+                borrow = 0
+            }
+        }
+        
+        // Combine R with normalized S
+        var result = Data()
+        result.append(r)
+        result.append(Data(normalizedS))
+        
+        return result
     }
 }
