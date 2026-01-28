@@ -150,18 +150,16 @@ final class DeviceIDManager {
             return nil
         }
         
-        // Convert hex string back to Data
-        var data = Data()
-        var temp = publicKeyHex
-        while temp.count >= 2 {
-            let subString = temp.prefix(2)
-            temp = String(temp.dropFirst(2))
-            if let byte = UInt8(subString, radix: 16) {
-                data.append(byte)
-            }
+        guard let data = hexStringToData(publicKeyHex) else {
+            return nil
         }
         
-        return data.count > 0 ? data : nil
+        // Validate public key format (65 bytes, starts with 0x04)
+        guard data.count == 65, data[0] == 0x04 else {
+            return nil
+        }
+        
+        return data
     }
     
     /// Get stored device private key
@@ -171,15 +169,46 @@ final class DeviceIDManager {
             return nil
         }
         
-        // Convert hex string back to Data
+        guard let data = hexStringToData(privateKeyHex) else {
+            return nil
+        }
+        
+        // Validate private key format (32 bytes, valid for secp256k1)
+        guard data.count == 32, Secp256k1.isValidPrivateKey(data) else {
+            return nil
+        }
+        
+        return data
+    }
+    
+    /// Convert hex string to Data
+    /// - Parameter hex: Hex string (with or without 0x prefix)
+    /// - Returns: Data representation, or nil if invalid hex
+    private func hexStringToData(_ hex: String) -> Data? {
+        var hexString = hex
+        
+        // Remove 0x prefix if present
+        if hexString.hasPrefix("0x") {
+            hexString = String(hexString.dropFirst(2))
+        }
+        
+        // Hex string must have even length
+        guard hexString.count % 2 == 0 else {
+            return nil
+        }
+        
         var data = Data()
-        var temp = privateKeyHex
+        var temp = hexString
+        
         while temp.count >= 2 {
             let subString = temp.prefix(2)
             temp = String(temp.dropFirst(2))
-            if let byte = UInt8(subString, radix: 16) {
-                data.append(byte)
+            
+            guard let byte = UInt8(subString, radix: 16) else {
+                return nil // Invalid hex character
             }
+            
+            data.append(byte)
         }
         
         return data.count > 0 ? data : nil

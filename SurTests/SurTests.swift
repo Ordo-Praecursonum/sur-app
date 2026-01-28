@@ -535,14 +535,12 @@ struct SurTests {
     @Test func testDevicePublicKeyShortening() async throws {
         // Test device public key shortening for display
         let fullKey = Data(repeating: 0xAB, count: 65)
-        fullKey.withUnsafeBytes { ptr in
-            // Just test the shortening format
-            let shortened = DeviceIDManager.shortenDevicePublicKey(fullKey)
-            
-            // Should be in format "xxxxxx...xxxxxx"
-            #expect(shortened.contains("..."))
-            #expect(shortened.count == 15) // 6 + 3 + 6
-        }
+        let shortened = DeviceIDManager.shortenDevicePublicKey(fullKey)
+        
+        // Should be in format "xxxxxx...xxxxxx"
+        #expect(shortened.contains("..."))
+        #expect(shortened.count == 15) // 6 + 3 + 6
+        #expect(shortened == "ababab...ababab")
     }
     
     @Test func testDeviceKeyStorageAndRetrieval() async throws {
@@ -560,6 +558,46 @@ struct SurTests {
         
         // Clean up
         deviceIDManager.clearDeviceKeys()
+    }
+    
+    @Test func testDeviceKeyValidation() async throws {
+        // Test that stored keys are validated on retrieval
+        let deviceIDManager = DeviceIDManager.shared
+        
+        // Test invalid public key (wrong length)
+        UserDefaults.standard.set("0102030405", forKey: "device.publicKey")
+        #expect(deviceIDManager.getStoredDevicePublicKey() == nil)
+        
+        // Test invalid public key (wrong prefix)
+        let wrongPrefixKey = Data(repeating: 0x02, count: 65)
+        let wrongPrefixHex = wrongPrefixKey.map { String(format: "%02x", $0) }.joined()
+        UserDefaults.standard.set(wrongPrefixHex, forKey: "device.publicKey")
+        #expect(deviceIDManager.getStoredDevicePublicKey() == nil)
+        
+        // Test invalid hex string
+        UserDefaults.standard.set("invalid_hex_string", forKey: "device.publicKey")
+        #expect(deviceIDManager.getStoredDevicePublicKey() == nil)
+        
+        // Clean up
+        deviceIDManager.clearDeviceKeys()
+    }
+    
+    @Test func testDeviceKeyCanBeUsedForCryptography() async throws {
+        // Test that generated device keys are valid for secp256k1 operations
+        let userPrivateKey = Data(repeating: 0x01, count: 32)
+        let deviceIDManager = DeviceIDManager.shared
+        
+        let (devicePrivateKey, devicePublicKey) = try deviceIDManager.generateDeviceKeys(from: userPrivateKey)
+        
+        // Verify the private key is valid for secp256k1
+        #expect(Secp256k1.isValidPrivateKey(devicePrivateKey))
+        
+        // Verify the public key can be derived from the private key
+        let derivedPublicKey = Secp256k1.derivePublicKey(from: devicePrivateKey)
+        #expect(derivedPublicKey == devicePublicKey)
+        
+        // Note: Actual signing/verification tests would require implementing
+        // or exposing signing functions in the Secp256k1 wrapper
     }
 }
 }
