@@ -676,7 +676,8 @@ struct SurTests {
         let r = signature.prefix(32)
         let s = signature.suffix(32)
         
-        // Define n/2 (half of secp256k1 curve order)
+        // Define n/2 (half of secp256k1 curve order) for verification
+        // This is intentionally defined here to independently verify the implementation
         let halfOrder = Data([
             0x7F, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
             0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
@@ -687,7 +688,7 @@ struct SurTests {
         // Check that S <= n/2 (normalized/canonical form)
         let sBytes = [UInt8](s)
         let halfOrderBytes = [UInt8](halfOrder)
-        var sIsNormalized = false
+        var sIsNormalized = true  // Default to true for the case where s == n/2
         
         for i in 0..<32 {
             if sBytes[i] < halfOrderBytes[i] {
@@ -698,6 +699,7 @@ struct SurTests {
                 sIsNormalized = false
                 break
             }
+            // If equal, continue to next byte
         }
         
         #expect(sIsNormalized, "S value should be normalized (S <= n/2) for compatibility with external tools")
@@ -773,11 +775,12 @@ struct SurTests {
         // Print signature for manual verification with external tools
         let signatureHex = signature.map { String(format: "%02x", $0) }.joined()
         let publicKeyHex = publicKey.map { String(format: "%02x", $0) }.joined()
+        let privateKeyHex = privateKey.map { String(format: "%02x", $0) }.joined()
         
         print("=== Signature Verification Data ===")
         print("Message: \(message)")
         print("Message Hash (SHA-256): \(actualHashHex)")
-        print("Private Key: 0000000000000000000000000000000000000000000000000000000000000001")
+        print("Private Key: \(privateKeyHex)")
         print("Public Key (uncompressed): \(publicKeyHex)")
         print("Signature (R+S): \(signatureHex)")
         print("Signature is \(signature.count) bytes (32-byte R + 32-byte S)")
