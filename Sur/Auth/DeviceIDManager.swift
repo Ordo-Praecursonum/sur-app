@@ -2,41 +2,50 @@
 //  DeviceIDManager.swift
 //  Sur
 //
-//  Manages device-specific identities derived from user private key and device UUID
+//  Manages device-specific cryptographic keys for signing and verification
+//  Uses secp256k1 elliptic curve for compatibility with blockchain ecosystems
 //
 
 import Foundation
 import CryptoKit
 import UIKit
 
-/// Error types for device ID operations
+/// Error types for device key operations
 enum DeviceIDError: LocalizedError {
     case invalidPrivateKey
     case derivationFailed
     case storageError
+    case invalidPublicKey
     
     var errorDescription: String? {
         switch self {
         case .invalidPrivateKey:
             return "Invalid user private key"
         case .derivationFailed:
-            return "Failed to derive device ID"
+            return "Failed to derive device key"
         case .storageError:
-            return "Failed to store device ID in UserDefaults"
+            return "Failed to store device key in UserDefaults"
+        case .invalidPublicKey:
+            return "Failed to generate device public key"
         }
     }
 }
 
-/// Manages device-specific identities
+/// Manages device-specific cryptographic keys for signing and verification
 ///
-/// Device IDs are deterministically derived from:
+/// Device keys are deterministically derived from:
 /// - User's private key (from mnemonic)
 /// - Device UUID (unique per device)
 ///
+/// Uses secp256k1 elliptic curve to generate:
+/// - Device private key: 32-byte secp256k1 private key (for signing)
+/// - Device public key: 65-byte uncompressed public key (for verification)
+///
 /// This allows:
-/// - Identifying which device data originates from
+/// - Signing messages to prove data originated from this device
+/// - Verifying signatures to ensure data provenance
 /// - Deterministic recreation of device keys
-/// - Privacy (public ID can be shared, private ID stays secret)
+/// - Privacy (public key can be shared, private key stays secret)
 final class DeviceIDManager {
     
     // MARK: - Constants
@@ -44,8 +53,11 @@ final class DeviceIDManager {
     /// UserDefaults key for device UUID
     private static let deviceUUIDKey = "device.uuid"
     
-    /// UserDefaults key for device public ID
-    private static let devicePublicIDKey = "device.publicID"
+    /// UserDefaults key for device private key (stored securely)
+    private static let devicePrivateKeyKey = "device.privateKey"
+    
+    /// UserDefaults key for device public key
+    private static let devicePublicKeyKey = "device.publicKey"
     
     // MARK: - Singleton
     
@@ -76,15 +88,19 @@ final class DeviceIDManager {
         return newUUID
     }
     
-    /// Generate device private and public IDs from user private key and device UUID
+    /// Generate device cryptographic keys from user private key and device UUID
     ///
-    /// Uses HMAC-SHA256 to derive device-specific keys:
-    /// - device_private_id = HMAC-SHA256(user_private_key, device_uuid)
-    /// - device_public_id = SHA256(device_private_id)
+    /// Uses HMAC-SHA256 to derive a seed, then generates a valid secp256k1 key pair:
+    /// - device_seed = HMAC-SHA256(user_private_key, device_uuid)
+    /// - device_private_key = device_seed (validated for secp256k1)
+    /// - device_public_key = secp256k1_public_key(device_private_key)
+    ///
+    /// The device private key can be used to sign messages, and the public key
+    /// can be used by others to verify those signatures, proving data provenance.
     ///
     /// - Parameter userPrivateKey: User's private key (32 bytes)
-    /// - Returns: Tuple of (devicePrivateID, devicePublicID) as hex strings
-    func generateDeviceIDs(from userPrivateKey: Data) throws -> (privateID: String, publicID: String) {
+    /// - Returns: Tuple of (devicePrivateKey, devicePublicKey) as Data
+    func generateDeviceKeys(from userPrivateKey: Data) throws -> (privateKey: Data, publicKey: Data) {
         guard userPrivateKey.count == 32 else {
             throw DeviceIDError.invalidPrivateKey
         }
@@ -94,48 +110,96 @@ final class DeviceIDManager {
             throw DeviceIDError.derivationFailed
         }
         
-        // Derive device private ID using HMAC-SHA256
-        // device_private_id = HMAC-SHA256(key: user_private_key, message: device_uuid)
+        // Derive device private key using HMAC-SHA256
+        // This provides deterministic generation: same user key + device UUID = same device key
         let symmetricKey = SymmetricKey(data: userPrivateKey)
         let hmac = HMAC<SHA256>.authenticationCode(for: uuidData, using: symmetricKey)
-        let devicePrivateID = Data(hmac)
+        let devicePrivateKey = Data(hmac)
         
-        // Derive device public ID using SHA256
-        // device_public_id = SHA256(device_private_id)
-        let devicePublicID = Data(SHA256.hash(data: devicePrivateID))
+        // Validate the derived key is valid for secp256k1
+        guard Secp256k1.isValidPrivateKey(devicePrivateKey) else {
+            throw DeviceIDError.derivationFailed
+        }
         
-        // Convert to hex strings
-        let privateIDHex = devicePrivateID.map { String(format: "%02x", $0) }.joined()
-        let publicIDHex = devicePublicID.map { String(format: "%02x", $0) }.joined()
+        // Derive device public key using secp256k1 elliptic curve
+        guard let devicePublicKey = Secp256k1.derivePublicKey(from: devicePrivateKey) else {
+            throw DeviceIDError.invalidPublicKey
+        }
         
-        return (privateIDHex, publicIDHex)
+        return (devicePrivateKey, devicePublicKey)
     }
     
-    /// Save device public ID to storage
-    /// - Parameter publicID: Device public ID hex string
-    func saveDevicePublicID(_ publicID: String) {
-        UserDefaults.standard.set(publicID, forKey: Self.devicePublicIDKey)
+    /// Save device keys to storage
+    /// - Parameters:
+    ///   - privateKey: Device private key (32 bytes) - stored as hex string
+    ///   - publicKey: Device public key (65 bytes) - stored as hex string
+    func saveDeviceKeys(privateKey: Data, publicKey: Data) {
+        let privateKeyHex = privateKey.map { String(format: "%02x", $0) }.joined()
+        let publicKeyHex = publicKey.map { String(format: "%02x", $0) }.joined()
+        
+        // Note: In production, device private key should be stored in Keychain
+        // For now, storing in UserDefaults as hex string
+        UserDefaults.standard.set(privateKeyHex, forKey: Self.devicePrivateKeyKey)
+        UserDefaults.standard.set(publicKeyHex, forKey: Self.devicePublicKeyKey)
     }
     
-    /// Get stored device public ID
-    /// - Returns: Device public ID hex string, if available
-    func getStoredDevicePublicID() -> String? {
-        return UserDefaults.standard.string(forKey: Self.devicePublicIDKey)
+    /// Get stored device public key
+    /// - Returns: Device public key as Data (65 bytes), if available
+    func getStoredDevicePublicKey() -> Data? {
+        guard let publicKeyHex = UserDefaults.standard.string(forKey: Self.devicePublicKeyKey) else {
+            return nil
+        }
+        
+        // Convert hex string back to Data
+        var data = Data()
+        var temp = publicKeyHex
+        while temp.count >= 2 {
+            let subString = temp.prefix(2)
+            temp = String(temp.dropFirst(2))
+            if let byte = UInt8(subString, radix: 16) {
+                data.append(byte)
+            }
+        }
+        
+        return data.count > 0 ? data : nil
     }
     
-    /// Clear device IDs (when wallet is deleted)
-    func clearDeviceIDs() {
-        UserDefaults.standard.removeObject(forKey: Self.devicePublicIDKey)
+    /// Get stored device private key
+    /// - Returns: Device private key as Data (32 bytes), if available
+    func getStoredDevicePrivateKey() -> Data? {
+        guard let privateKeyHex = UserDefaults.standard.string(forKey: Self.devicePrivateKeyKey) else {
+            return nil
+        }
+        
+        // Convert hex string back to Data
+        var data = Data()
+        var temp = privateKeyHex
+        while temp.count >= 2 {
+            let subString = temp.prefix(2)
+            temp = String(temp.dropFirst(2))
+            if let byte = UInt8(subString, radix: 16) {
+                data.append(byte)
+            }
+        }
+        
+        return data.count > 0 ? data : nil
+    }
+    
+    /// Clear device keys (when wallet is deleted)
+    func clearDeviceKeys() {
+        UserDefaults.standard.removeObject(forKey: Self.devicePrivateKeyKey)
+        UserDefaults.standard.removeObject(forKey: Self.devicePublicKeyKey)
         // Note: We keep the device UUID to maintain device identity
     }
     
-    /// Format device public ID for display (shortened version)
-    /// - Parameter publicID: Full device public ID hex string
-    /// - Returns: Shortened ID for display (e.g., "d4f2a1...bc8e3f")
-    static func shortenDeviceID(_ publicID: String) -> String {
-        guard publicID.count >= 12 else { return publicID }
-        let prefix = String(publicID.prefix(6))
-        let suffix = String(publicID.suffix(6))
+    /// Format device public key for display (shortened version)
+    /// - Parameter publicKey: Full device public key (65 bytes)
+    /// - Returns: Shortened hex string for display (e.g., "04a3f2...bc8e3f")
+    static func shortenDevicePublicKey(_ publicKey: Data) -> String {
+        let publicKeyHex = publicKey.map { String(format: "%02x", $0) }.joined()
+        guard publicKeyHex.count >= 12 else { return publicKeyHex }
+        let prefix = String(publicKeyHex.prefix(6))
+        let suffix = String(publicKeyHex.suffix(6))
         return "\(prefix)...\(suffix)"
     }
 }

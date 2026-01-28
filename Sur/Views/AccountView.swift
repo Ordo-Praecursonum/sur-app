@@ -90,26 +90,26 @@ struct AccountView: View {
                             }
                         }
                         
-                        // Device Public ID
-                        if let deviceID = authManager.devicePublicID {
+                        // Device Public Key
+                        if let devicePublicKey = authManager.devicePublicKey {
                             Divider()
                                 .padding(.vertical, 8)
                             
                             VStack(spacing: 8) {
-                                Text("Device Public ID")
+                                Text("Device Public Key")
                                     .font(.caption)
                                     .foregroundColor(.secondary)
                                 
-                                Text(authManager.shortDeviceID ?? deviceID)
+                                Text(authManager.shortDevicePublicKey ?? DeviceIDManager.shortenDevicePublicKey(devicePublicKey))
                                     .font(.system(.caption, design: .monospaced))
                                     .multilineTextAlignment(.center)
                                     .foregroundColor(.primary)
                                 
                                 // Copy button with orange accent
-                                Button(action: { copyDeviceID(deviceID) }) {
+                                Button(action: { copyDevicePublicKey(devicePublicKey) }) {
                                     HStack(spacing: 4) {
                                         Image(systemName: "doc.on.doc")
-                                        Text("Copy Device ID")
+                                        Text("Copy Device Key")
                                     }
                                     .font(.caption)
                                     .foregroundColor(.orange)
@@ -247,8 +247,9 @@ struct AccountView: View {
         }
     }
     
-    private func copyDeviceID(_ deviceID: String) {
-        UIPasteboard.general.string = deviceID
+    private func copyDevicePublicKey(_ devicePublicKey: Data) {
+        let publicKeyHex = devicePublicKey.map { String(format: "%02x", $0) }.joined()
+        UIPasteboard.general.string = publicKeyHex
         
         withAnimation {
             showCopiedToast = true

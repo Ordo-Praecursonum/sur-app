@@ -72,11 +72,11 @@ final class AuthenticationManager: ObservableObject {
     /// Loading state for async operations
     @Published private(set) var isLoading: Bool = false
     
-    /// Device public ID for display
-    @Published private(set) var devicePublicID: String?
+    /// Device public key for display (65-byte secp256k1 public key)
+    @Published private(set) var devicePublicKey: Data?
     
-    /// Short version of device public ID for display
-    @Published private(set) var shortDeviceID: String?
+    /// Short version of device public key for display
+    @Published private(set) var shortDevicePublicKey: String?
     
     // MARK: - Dependencies
     
@@ -106,8 +106,8 @@ final class AuthenticationManager: ObservableObject {
         if hasWallet {
             // Load cached addresses if available
             loadCachedAddresses()
-            // Load device public ID if available
-            loadDevicePublicID()
+            // Load device public key if available
+            loadDevicePublicKey()
             state = .locked
         } else {
             state = .unauthenticated
@@ -134,9 +134,9 @@ final class AuthenticationManager: ObservableObject {
             // Get the private key for the default network (Ethereum)
             let (privateKey, _) = try MultiChainKeyManager.generateKeysForNetwork(mnemonic, network: .ethereum)
             
-            // Generate device IDs from user private key
-            let (_, devicePublicID) = try deviceIDManager.generateDeviceIDs(from: privateKey)
-            deviceIDManager.saveDevicePublicID(devicePublicID)
+            // Generate device cryptographic keys from user private key
+            let (devicePrivateKey, devicePublicKey) = try deviceIDManager.generateDeviceKeys(from: privateKey)
+            deviceIDManager.saveDeviceKeys(privateKey: devicePrivateKey, publicKey: devicePublicKey)
             
             // Store securely
             try secureStorage.saveMnemonic(mnemonic, requireBiometric: useBiometric)
@@ -153,7 +153,7 @@ final class AuthenticationManager: ObservableObject {
             // Update state
             hasWallet = true
             updateAddressForNetwork()
-            loadDevicePublicID()
+            loadDevicePublicKey()
             isBiometricEnabled = useBiometric
             state = .authenticated
             
@@ -188,9 +188,9 @@ final class AuthenticationManager: ObservableObject {
             // Get the private key for the default network (Ethereum)
             let (privateKey, _) = try MultiChainKeyManager.generateKeysForNetwork(mnemonic, network: .ethereum)
             
-            // Generate device IDs from user private key
-            let (_, devicePublicID) = try deviceIDManager.generateDeviceIDs(from: privateKey)
-            deviceIDManager.saveDevicePublicID(devicePublicID)
+            // Generate device cryptographic keys from user private key
+            let (devicePrivateKey, devicePublicKey) = try deviceIDManager.generateDeviceKeys(from: privateKey)
+            deviceIDManager.saveDeviceKeys(privateKey: devicePrivateKey, publicKey: devicePublicKey)
             
             // Store securely
             try secureStorage.saveMnemonic(mnemonic, requireBiometric: useBiometric)
@@ -207,7 +207,7 @@ final class AuthenticationManager: ObservableObject {
             // Update state
             hasWallet = true
             updateAddressForNetwork()
-            loadDevicePublicID()
+            loadDevicePublicKey()
             isBiometricEnabled = useBiometric
             state = .authenticated
         } catch {
@@ -241,7 +241,7 @@ final class AuthenticationManager: ObservableObject {
                     // Load addresses
                     loadCachedAddresses()
                     updateAddressForNetwork()
-                    loadDevicePublicID()
+                    loadDevicePublicKey()
                     state = .authenticated
                 } else {
                     state = .locked
@@ -251,7 +251,7 @@ final class AuthenticationManager: ObservableObject {
                 // No biometric required, just unlock
                 loadCachedAddresses()
                 updateAddressForNetwork()
-                loadDevicePublicID()
+                loadDevicePublicKey()
                 state = .authenticated
             }
         } catch {
@@ -277,13 +277,13 @@ final class AuthenticationManager: ObservableObject {
                 UserDefaults.standard.removeObject(forKey: addressKey(for: network))
             }
             // Clear device IDs
-            deviceIDManager.clearDeviceIDs()
+            deviceIDManager.clearDeviceKeys()
             hasWallet = false
             publicAddress = nil
             shortAddress = nil
             networkAddresses = [:]
-            devicePublicID = nil
-            shortDeviceID = nil
+            devicePublicKey = nil
+            shortDevicePublicKey = nil
         }
         
         isBiometricEnabled = false
@@ -397,11 +397,11 @@ final class AuthenticationManager: ObservableObject {
         return UserDefaults.standard.string(forKey: addressKey(for: network))
     }
     
-    /// Load device public ID from storage
-    private func loadDevicePublicID() {
-        if let publicID = deviceIDManager.getStoredDevicePublicID() {
-            devicePublicID = publicID
-            shortDeviceID = DeviceIDManager.shortenDeviceID(publicID)
+    /// Load device public key from storage
+    private func loadDevicePublicKey() {
+        if let publicKey = deviceIDManager.getStoredDevicePublicKey() {
+            devicePublicKey = publicKey
+            shortDevicePublicKey = DeviceIDManager.shortenDevicePublicKey(publicKey)
         }
     }
 }
