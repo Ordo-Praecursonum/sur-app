@@ -194,6 +194,91 @@ final class Secp256k1 {
         return Data(finalResult)
     }
 
+    /// Sign a message hash using secp256k1 ECDSA
+    /// 
+    /// This produces a recoverable ECDSA signature that can be verified using the corresponding
+    /// public key. The signature format is compatible with Ethereum and Bitcoin signing.
+    ///
+    /// - Parameters:
+    ///   - messageHash: 32-byte hash of the message to sign (e.g., SHA-256 or Keccak-256 of message)
+    ///   - privateKey: 32-byte private key data
+    /// - Returns: Signature data (64 bytes: R + S in compact format) or nil if signing fails
+    static func sign(messageHash: Data, with privateKey: Data) -> Data? {
+        guard messageHash.count == 32 else {
+            #if DEBUG
+            print("[Secp256k1] Invalid message hash length: \(messageHash.count), expected 32")
+            #endif
+            return nil
+        }
+        
+        guard privateKey.count == 32 else {
+            #if DEBUG
+            print("[Secp256k1] Invalid private key length: \(privateKey.count), expected 32")
+            #endif
+            return nil
+        }
+        
+        do {
+            // Create a secp256k1 private key from raw 32-byte data
+            let privKey = try P256K.Signing.PrivateKey(dataRepresentation: privateKey)
+            
+            // Sign the message hash
+            // P256K uses ECDSA signature which returns DER-encoded signature
+            let signature = try privKey.signature(for: messageHash)
+            
+            // Return the raw signature data (compact format: 64 bytes R+S)
+            return signature.dataRepresentation
+        } catch {
+            #if DEBUG
+            print("[Secp256k1] Failed to sign message: \(error)")
+            #endif
+            return nil
+        }
+    }
+    
+    /// Verify an ECDSA signature for a message hash
+    ///
+    /// - Parameters:
+    ///   - signature: Signature data (64 bytes in compact format)
+    ///   - messageHash: 32-byte hash of the message
+    ///   - publicKey: 65-byte uncompressed public key (0x04 + X + Y)
+    /// - Returns: true if signature is valid, false otherwise
+    static func verify(signature: Data, for messageHash: Data, publicKey: Data) -> Bool {
+        guard messageHash.count == 32 else {
+            #if DEBUG
+            print("[Secp256k1] Invalid message hash length: \(messageHash.count), expected 32")
+            #endif
+            return false
+        }
+        
+        guard publicKey.count == 65, publicKey[0] == 0x04 else {
+            #if DEBUG
+            print("[Secp256k1] Invalid public key format")
+            #endif
+            return false
+        }
+        
+        do {
+            // Extract X and Y coordinates (32 bytes each, skip the 0x04 prefix)
+            let x = publicKey[1..<33]
+            let y = publicKey[33..<65]
+            
+            // Create P256K public key from X and Y coordinates
+            let pubKey = try P256K.Signing.PublicKey(x963Representation: publicKey)
+            
+            // Create signature object from data
+            let sig = try P256K.Signing.ECDSASignature(dataRepresentation: signature)
+            
+            // Verify the signature
+            return pubKey.isValidSignature(sig, for: messageHash)
+        } catch {
+            #if DEBUG
+            print("[Secp256k1] Failed to verify signature: \(error)")
+            #endif
+            return false
+        }
+    }
+
     // MARK: - Private Helpers
 
     /// Check if a 32-byte value is less than the curve order

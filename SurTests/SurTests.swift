@@ -6,6 +6,7 @@
 //
 
 import Testing
+import CryptoKit
 @testable import Sur
 
 struct SurTests {
@@ -599,6 +600,47 @@ struct SurTests {
         // Note: Actual signing/verification tests would require implementing
         // or exposing signing functions in the Secp256k1 wrapper
     }
+    
+    @Test func testDeviceKeySigningAndVerification() async throws {
+        // Test that device keys can actually sign and verify messages
+        let userPrivateKey = Data(repeating: 0x01, count: 32)
+        let deviceIDManager = DeviceIDManager.shared
+        
+        let (devicePrivateKey, devicePublicKey) = try deviceIDManager.generateDeviceKeys(from: userPrivateKey)
+        
+        // Create a test message
+        let message = "Test message from device"
+        guard let messageData = message.data(using: .utf8) else {
+            throw TestError.messageEncodingFailed
+        }
+        
+        // Hash the message using SHA-256
+        let messageHash = SHA256.hash(data: messageData)
+        let messageHashData = Data(messageHash)
+        
+        // Sign the message with device private key
+        guard let signature = Secp256k1.sign(messageHash: messageHashData, with: devicePrivateKey) else {
+            throw TestError.signingFailed
+        }
+        
+        // Verify the signature is not empty
+        #expect(signature.count > 0)
+        
+        // Verify the signature with device public key
+        let isValid = Secp256k1.verify(signature: signature, for: messageHashData, publicKey: devicePublicKey)
+        #expect(isValid)
+        
+        // Verify that wrong message doesn't verify
+        let wrongMessage = "Different message"
+        guard let wrongMessageData = wrongMessage.data(using: .utf8) else {
+            throw TestError.messageEncodingFailed
+        }
+        let wrongMessageHash = SHA256.hash(data: wrongMessageData)
+        let wrongMessageHashData = Data(wrongMessageHash)
+        
+        let isInvalid = Secp256k1.verify(signature: signature, for: wrongMessageHashData, publicKey: devicePublicKey)
+        #expect(!isInvalid)
+    }
 }
 }
 
@@ -609,4 +651,6 @@ enum TestError: Error {
     case bech32EncodingFailed
     case bech32DecodingFailed
     case ed25519KeyDerivationFailed
+    case messageEncodingFailed
+    case signingFailed
 }

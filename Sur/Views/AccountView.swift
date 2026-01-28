@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import CryptoKit
 
 /// Account view displaying the user's wallet information
 struct AccountView: View {
@@ -21,6 +22,10 @@ struct AccountView: View {
     @State private var isLoadingPhrase = false
     @State private var showError = false
     @State private var errorMessage: String?
+    @State private var showSignMessageDialog = false
+    @State private var messageToSign = ""
+    @State private var signedSignature: String?
+    @State private var showSignatureResult = false
     
     // MARK: - Body
     
@@ -110,6 +115,17 @@ struct AccountView: View {
                                     HStack(spacing: 4) {
                                         Image(systemName: "doc.on.doc")
                                         Text("Copy Device Key")
+                                    }
+                                    .font(.caption)
+                                    .foregroundColor(.orange)
+                                }
+                                .buttonStyle(.plain)
+                                
+                                // Sign message button with orange accent
+                                Button(action: { showSignMessageDialog = true }) {
+                                    HStack(spacing: 4) {
+                                        Image(systemName: "signature")
+                                        Text("Sign a Message")
                                     }
                                     .font(.caption)
                                     .foregroundColor(.orange)
@@ -215,6 +231,20 @@ struct AccountView: View {
                     loadPhrase: loadRecoveryPhrase
                 )
             }
+            .sheet(isPresented: $showSignMessageDialog) {
+                SignMessageSheet(
+                    isPresented: $showSignMessageDialog,
+                    messageToSign: $messageToSign,
+                    onSign: signMessage
+                )
+            }
+            .sheet(isPresented: $showSignatureResult) {
+                SignatureResultSheet(
+                    isPresented: $showSignatureResult,
+                    signature: signedSignature ?? "",
+                    message: messageToSign
+                )
+            }
             .alert("Delete Wallet", isPresented: $showDeleteConfirmation) {
                 Button("Cancel", role: .cancel) { }
                 Button("Delete", role: .destructive) {
@@ -278,6 +308,217 @@ struct AccountView: View {
                     errorMessage = error.localizedDescription
                     showRecoveryPhrase = false
                     showError = true
+                }
+            }
+        }
+    }
+    
+    private func signMessage() {
+        guard !messageToSign.isEmpty else {
+            errorMessage = "Please enter a message to sign"
+            showError = true
+            return
+        }
+        
+        guard let devicePrivateKey = DeviceIDManager.shared.getStoredDevicePrivateKey() else {
+            errorMessage = "Device private key not found"
+            showError = true
+            return
+        }
+        
+        // Hash the message using SHA-256 (standard practice for ECDSA signing)
+        guard let messageData = messageToSign.data(using: .utf8) else {
+            errorMessage = "Failed to encode message"
+            showError = true
+            return
+        }
+        
+        let messageHash = SHA256.hash(data: messageData)
+        let messageHashData = Data(messageHash)
+        
+        // Sign the message hash with device private key
+        guard let signature = Secp256k1.sign(messageHash: messageHashData, with: devicePrivateKey) else {
+            errorMessage = "Failed to sign message"
+            showError = true
+            return
+        }
+        
+        // Convert signature to hex string
+        let signatureHex = signature.map { String(format: "%02x", $0) }.joined()
+        signedSignature = signatureHex
+        
+        // Close the sign dialog and show the result
+        showSignMessageDialog = false
+        showSignatureResult = true
+    }
+}
+
+// MARK: - Sign Message Sheet
+
+struct SignMessageSheet: View {
+    @Binding var isPresented: Bool
+    @Binding var messageToSign: String
+    let onSign: () -> Void
+    
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 24) {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Enter Message to Sign")
+                        .font(.headline)
+                    
+                    Text("Enter the message you want to sign with your device private key. The message will be hashed using SHA-256 before signing.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    
+                    TextEditor(text: $messageToSign)
+                        .font(.body)
+                        .frame(minHeight: 150)
+                        .padding(8)
+                        .background(Color(.systemGray6))
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                }
+                .padding()
+                
+                Spacer()
+                
+                Button(action: {
+                    onSign()
+                }) {
+                    Text("Sign Message")
+                        .font(.headline)
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(
+                            LinearGradient(
+                                colors: [.orange, .red],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
+                        )
+                        .foregroundColor(.white)
+                        .clipShape(RoundedRectangle(cornerRadius: 14))
+                }
+                .padding(.horizontal, 24)
+                .padding(.bottom, 24)
+                .disabled(messageToSign.isEmpty)
+            }
+            .navigationTitle("Sign Message")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Cancel") {
+                        messageToSign = ""
+                        isPresented = false
+                    }
+                    .foregroundColor(.orange)
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Signature Result Sheet
+
+struct SignatureResultSheet: View {
+    @Binding var isPresented: Bool
+    let signature: String
+    let message: String
+    @State private var showCopied = false
+    
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(spacing: 24) {
+                    // Success indicator
+                    Image(systemName: "checkmark.seal.fill")
+                        .font(.system(size: 60))
+                        .foregroundStyle(.green)
+                        .padding(.top, 24)
+                    
+                    Text("Message Signed Successfully")
+                        .font(.headline)
+                    
+                    // Signing algorithm info
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Signing Algorithm")
+                            .font(.headline)
+                            .foregroundColor(.primary)
+                        
+                        Text("ECDSA on secp256k1 curve")
+                            .font(.body)
+                            .foregroundColor(.secondary)
+                        
+                        Text("Message is hashed using SHA-256, then signed with the device private key using ECDSA (Elliptic Curve Digital Signature Algorithm) on the secp256k1 curve. This is the same algorithm used by Bitcoin and Ethereum.")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .padding(.vertical, 4)
+                    }
+                    .padding()
+                    .background(Color(.systemGray6))
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                    .padding(.horizontal)
+                    
+                    // Original message
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Original Message")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        
+                        Text(message)
+                            .font(.system(.body, design: .monospaced))
+                            .padding()
+                            .background(Color(.systemGray6))
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                    }
+                    .padding(.horizontal)
+                    
+                    // Signature
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Signature (Hex)")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        
+                        Text(signature)
+                            .font(.system(.caption, design: .monospaced))
+                            .lineLimit(nil)
+                            .multilineTextAlignment(.leading)
+                            .padding()
+                            .background(Color(.systemGray6))
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                        
+                        Button(action: {
+                            UIPasteboard.general.string = signature
+                            withAnimation {
+                                showCopied = true
+                            }
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                                withAnimation {
+                                    showCopied = false
+                                }
+                            }
+                        }) {
+                            HStack {
+                                Image(systemName: "doc.on.doc")
+                                Text(showCopied ? "Copied!" : "Copy Signature")
+                            }
+                            .font(.caption)
+                            .foregroundColor(.orange)
+                        }
+                    }
+                    .padding(.horizontal)
+                    
+                    Spacer()
+                }
+            }
+            .navigationTitle("Signature Result")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Done") {
+                        isPresented = false
+                    }
+                    .foregroundColor(.orange)
                 }
             }
         }
