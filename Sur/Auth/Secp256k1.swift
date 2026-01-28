@@ -224,11 +224,32 @@ final class Secp256k1 {
             let privKey = try P256K.Signing.PrivateKey(dataRepresentation: privateKey)
             
             // Sign the message hash
-            // Returns compact format signature (64 bytes: R + S)
             let signature = try privKey.signature(for: messageHash)
             
-            // Return the raw signature data in compact format (64 bytes R+S)
-            return signature.dataRepresentation
+            // P256K returns DER-encoded signature, but we need raw R,S format
+            // DER format: 0x30 [total-length] 0x02 [R-length] [R] 0x02 [S-length] [S]
+            // We need to extract R and S and return them as 64 bytes (32 bytes R + 32 bytes S)
+            let derSignature = signature.dataRepresentation
+            
+            #if DEBUG
+            print("[Secp256k1] DER signature length: \(derSignature.count)")
+            print("[Secp256k1] DER signature: \(derSignature.map { String(format: "%02x", $0) }.joined())")
+            #endif
+            
+            // Extract R and S from DER encoding
+            guard let (r, s) = extractRSFromDER(derSignature) else {
+                #if DEBUG
+                print("[Secp256k1] Failed to extract R,S from DER signature")
+                #endif
+                return nil
+            }
+            
+            // Concatenate R and S as raw 64 bytes
+            var compactSignature = Data()
+            compactSignature.append(r)
+            compactSignature.append(s)
+            
+            return compactSignature
         } catch {
             #if DEBUG
             print("[Secp256k1] Failed to sign message: \(error)")
@@ -240,7 +261,7 @@ final class Secp256k1 {
     /// Verify an ECDSA signature for a message hash
     ///
     /// - Parameters:
-    ///   - signature: Signature data (64 bytes in compact format)
+    ///   - signature: Signature data (64 bytes in compact format: R + S)
     ///   - messageHash: 32-byte hash of the message
     ///   - publicKey: 65-byte uncompressed public key (0x04 + X + Y)
     /// - Returns: true if signature is valid, false otherwise
@@ -259,12 +280,31 @@ final class Secp256k1 {
             return false
         }
         
+        // Signature should be 64 bytes in compact format (R + S)
+        guard signature.count == 64 else {
+            #if DEBUG
+            print("[Secp256k1] Invalid signature length: \(signature.count), expected 64")
+            #endif
+            return false
+        }
+        
         do {
             // Create P256K public key from uncompressed representation
             let pubKey = try P256K.Signing.PublicKey(x963Representation: publicKey)
             
-            // Create signature object from data
-            let sig = try P256K.Signing.ECDSASignature(dataRepresentation: signature)
+            // Convert compact signature (R + S) to DER format for P256K
+            let r = signature[0..<32]
+            let s = signature[32..<64]
+            
+            guard let derSignature = createDERSignature(r: r, s: s) else {
+                #if DEBUG
+                print("[Secp256k1] Failed to create DER signature from R,S")
+                #endif
+                return false
+            }
+            
+            // Create signature object from DER data
+            let sig = try P256K.Signing.ECDSASignature(dataRepresentation: derSignature)
             
             // Verify the signature
             return pubKey.isValidSignature(sig, for: messageHash)
@@ -277,6 +317,114 @@ final class Secp256k1 {
     }
 
     // MARK: - Private Helpers
+    
+    /// Extract R and S values from DER-encoded signature
+    /// - Parameter der: DER-encoded signature
+    /// - Returns: Tuple of (R, S) as 32-byte Data each, or nil if parsing fails
+    private static func extractRSFromDER(_ der: Data) -> (Data, Data)? {
+        guard der.count >= 8 else { return nil }
+        guard der[0] == 0x30 else { return nil } // DER sequence tag
+        
+        var index = 2 // Skip sequence tag and length
+        
+        // Extract R
+        guard index < der.count, der[index] == 0x02 else { return nil } // Integer tag
+        index += 1
+        
+        guard index < der.count else { return nil }
+        var rLength = Int(der[index])
+        index += 1
+        
+        // Handle leading zero byte for positive integers
+        if rLength > 32 {
+            guard index < der.count, der[index] == 0x00 else { return nil }
+            index += 1
+            rLength -= 1
+        }
+        
+        guard index + rLength <= der.count else { return nil }
+        var rData = Data(der[index..<(index + rLength)])
+        index += rLength
+        
+        // Pad R to 32 bytes if needed
+        while rData.count < 32 {
+            rData.insert(0x00, at: 0)
+        }
+        
+        // Extract S
+        guard index < der.count, der[index] == 0x02 else { return nil } // Integer tag
+        index += 1
+        
+        guard index < der.count else { return nil }
+        var sLength = Int(der[index])
+        index += 1
+        
+        // Handle leading zero byte for positive integers
+        if sLength > 32 {
+            guard index < der.count, der[index] == 0x00 else { return nil }
+            index += 1
+            sLength -= 1
+        }
+        
+        guard index + sLength <= der.count else { return nil }
+        var sData = Data(der[index..<(index + sLength)])
+        
+        // Pad S to 32 bytes if needed
+        while sData.count < 32 {
+            sData.insert(0x00, at: 0)
+        }
+        
+        return (rData, sData)
+    }
+    
+    /// Create DER-encoded signature from R and S values
+    /// - Parameters:
+    ///   - r: R value (32 bytes)
+    ///   - s: S value (32 bytes)
+    /// - Returns: DER-encoded signature or nil if creation fails
+    private static func createDERSignature(r: Data, s: Data) -> Data? {
+        guard r.count == 32, s.count == 32 else { return nil }
+        
+        // Remove leading zeros from R and S, but keep at least one byte
+        var rTrimmed = r
+        while rTrimmed.count > 1 && rTrimmed[0] == 0x00 {
+            rTrimmed = rTrimmed.dropFirst()
+        }
+        
+        var sTrimmed = s
+        while sTrimmed.count > 1 && sTrimmed[0] == 0x00 {
+            sTrimmed = sTrimmed.dropFirst()
+        }
+        
+        // Add leading zero if high bit is set (to keep it positive)
+        if rTrimmed[0] & 0x80 != 0 {
+            rTrimmed.insert(0x00, at: 0)
+        }
+        if sTrimmed[0] & 0x80 != 0 {
+            sTrimmed.insert(0x00, at: 0)
+        }
+        
+        // Build DER structure
+        var der = Data()
+        
+        // R integer
+        der.append(0x02) // Integer tag
+        der.append(UInt8(rTrimmed.count))
+        der.append(rTrimmed)
+        
+        // S integer
+        der.append(0x02) // Integer tag
+        der.append(UInt8(sTrimmed.count))
+        der.append(sTrimmed)
+        
+        // Sequence wrapper
+        var result = Data()
+        result.append(0x30) // Sequence tag
+        result.append(UInt8(der.count))
+        result.append(der)
+        
+        return result
+    }
 
     /// Check if a 32-byte value is less than the curve order
     private static func isLessThanCurveOrder(_ value: [UInt8]) -> Bool {
