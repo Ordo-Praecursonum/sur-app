@@ -6,6 +6,7 @@
 //
 
 import Testing
+import CryptoKit
 @testable import Sur
 
 struct SurTests {
@@ -465,6 +466,182 @@ struct SurTests {
         let invalidSeed = Data(repeating: 0x01, count: 16)
         #expect(!Ed25519.isValidSeed(invalidSeed))
     }
+    
+    // MARK: - Device Key Tests
+    
+    @Test func testDeviceKeyGeneration() async throws {
+        // Test device key generation from user private key using secp256k1
+        let userPrivateKey = Data(repeating: 0x01, count: 32)
+        let deviceIDManager = DeviceIDManager.shared
+        
+        let (devicePrivateKey, devicePublicKey) = try deviceIDManager.generateDeviceKeys(from: userPrivateKey)
+        
+        // Device private key should be 32 bytes
+        #expect(devicePrivateKey.count == 32)
+        
+        // Device public key should be 65 bytes (uncompressed secp256k1)
+        #expect(devicePublicKey.count == 65)
+        
+        // Public key should start with 0x04 (uncompressed format)
+        #expect(devicePublicKey[0] == 0x04)
+        
+        // Device private key should be valid for secp256k1
+        #expect(Secp256k1.isValidPrivateKey(devicePrivateKey))
+    }
+    
+    @Test func testDeviceKeyDeterminism() async throws {
+        // Test that device keys are deterministic for the same user private key
+        let userPrivateKey = Data(repeating: 0x42, count: 32)
+        let deviceIDManager = DeviceIDManager.shared
+        
+        // Generate keys twice
+        let (privateKey1, publicKey1) = try deviceIDManager.generateDeviceKeys(from: userPrivateKey)
+        let (privateKey2, publicKey2) = try deviceIDManager.generateDeviceKeys(from: userPrivateKey)
+        
+        // Keys should be identical (deterministic)
+        #expect(privateKey1 == privateKey2)
+        #expect(publicKey1 == publicKey2)
+    }
+    
+    @Test func testDeviceKeyUniqueness() async throws {
+        // Test that different user private keys produce different device keys
+        let userPrivateKey1 = Data(repeating: 0x01, count: 32)
+        let userPrivateKey2 = Data(repeating: 0x02, count: 32)
+        let deviceIDManager = DeviceIDManager.shared
+        
+        let (privateKey1, publicKey1) = try deviceIDManager.generateDeviceKeys(from: userPrivateKey1)
+        let (privateKey2, publicKey2) = try deviceIDManager.generateDeviceKeys(from: userPrivateKey2)
+        
+        // Keys should be different for different user keys
+        #expect(privateKey1 != privateKey2)
+        #expect(publicKey1 != publicKey2)
+    }
+    
+    @Test func testDeviceKeyInvalidPrivateKey() async throws {
+        // Test that invalid private key throws error
+        let invalidKey = Data(repeating: 0x01, count: 16) // Wrong length
+        let deviceIDManager = DeviceIDManager.shared
+        
+        do {
+            _ = try deviceIDManager.generateDeviceKeys(from: invalidKey)
+            #expect(Bool(false), "Should have thrown error for invalid key")
+        } catch DeviceIDError.invalidPrivateKey {
+            // Expected error
+            #expect(true)
+        } catch {
+            #expect(Bool(false), "Wrong error type thrown")
+        }
+    }
+    
+    @Test func testDevicePublicKeyShortening() async throws {
+        // Test device public key shortening for display
+        let fullKey = Data(repeating: 0xAB, count: 65)
+        let shortened = DeviceIDManager.shortenDevicePublicKey(fullKey)
+        
+        // Should be in format "xxxxxx...xxxxxx"
+        #expect(shortened.contains("..."))
+        #expect(shortened.count == 15) // 6 + 3 + 6
+        #expect(shortened == "ababab...ababab")
+    }
+    
+    @Test func testDeviceKeyStorageAndRetrieval() async throws {
+        // Test saving and retrieving device keys
+        let deviceIDManager = DeviceIDManager.shared
+        let testPrivateKey = Data(repeating: 0x42, count: 32)
+        let testPublicKey = Data(repeating: 0x04, count: 65)
+        
+        deviceIDManager.saveDeviceKeys(privateKey: testPrivateKey, publicKey: testPublicKey)
+        let retrievedPublic = deviceIDManager.getStoredDevicePublicKey()
+        let retrievedPrivate = deviceIDManager.getStoredDevicePrivateKey()
+        
+        #expect(retrievedPublic == testPublicKey)
+        #expect(retrievedPrivate == testPrivateKey)
+        
+        // Clean up
+        deviceIDManager.clearDeviceKeys()
+    }
+    
+    @Test func testDeviceKeyValidation() async throws {
+        // Test that stored keys are validated on retrieval
+        let deviceIDManager = DeviceIDManager.shared
+        
+        // Test invalid public key (wrong length)
+        UserDefaults.standard.set("0102030405", forKey: "device.publicKey")
+        #expect(deviceIDManager.getStoredDevicePublicKey() == nil)
+        
+        // Test invalid public key (wrong prefix)
+        let wrongPrefixKey = Data(repeating: 0x02, count: 65)
+        let wrongPrefixHex = wrongPrefixKey.map { String(format: "%02x", $0) }.joined()
+        UserDefaults.standard.set(wrongPrefixHex, forKey: "device.publicKey")
+        #expect(deviceIDManager.getStoredDevicePublicKey() == nil)
+        
+        // Test invalid hex string
+        UserDefaults.standard.set("invalid_hex_string", forKey: "device.publicKey")
+        #expect(deviceIDManager.getStoredDevicePublicKey() == nil)
+        
+        // Clean up
+        deviceIDManager.clearDeviceKeys()
+    }
+    
+    @Test func testDeviceKeyCanBeUsedForCryptography() async throws {
+        // Test that generated device keys are valid for secp256k1 operations
+        let userPrivateKey = Data(repeating: 0x01, count: 32)
+        let deviceIDManager = DeviceIDManager.shared
+        
+        let (devicePrivateKey, devicePublicKey) = try deviceIDManager.generateDeviceKeys(from: userPrivateKey)
+        
+        // Verify the private key is valid for secp256k1
+        #expect(Secp256k1.isValidPrivateKey(devicePrivateKey))
+        
+        // Verify the public key can be derived from the private key
+        let derivedPublicKey = Secp256k1.derivePublicKey(from: devicePrivateKey)
+        #expect(derivedPublicKey == devicePublicKey)
+        
+        // Note: Actual signing/verification tests would require implementing
+        // or exposing signing functions in the Secp256k1 wrapper
+    }
+    
+    @Test func testDeviceKeySigningAndVerification() async throws {
+        // Test that device keys can actually sign and verify messages
+        let userPrivateKey = Data(repeating: 0x01, count: 32)
+        let deviceIDManager = DeviceIDManager.shared
+        
+        let (devicePrivateKey, devicePublicKey) = try deviceIDManager.generateDeviceKeys(from: userPrivateKey)
+        
+        // Create a test message
+        let message = "Test message from device"
+        guard let messageData = message.data(using: .utf8) else {
+            throw TestError.messageEncodingFailed
+        }
+        
+        // Hash the message using SHA-256
+        let messageHash = SHA256.hash(data: messageData)
+        let messageHashData = Data(messageHash)
+        
+        // Sign the message with device private key
+        guard let signature = Secp256k1.sign(messageHash: messageHashData, with: devicePrivateKey) else {
+            throw TestError.signingFailed
+        }
+        
+        // Verify the signature is exactly 64 bytes (R + S in compact format)
+        #expect(signature.count == 64)
+        
+        // Verify the signature with device public key
+        let isValid = Secp256k1.verify(signature: signature, for: messageHashData, publicKey: devicePublicKey)
+        #expect(isValid)
+        
+        // Verify that wrong message doesn't verify
+        let wrongMessage = "Different message"
+        guard let wrongMessageData = wrongMessage.data(using: .utf8) else {
+            throw TestError.messageEncodingFailed
+        }
+        let wrongMessageHash = SHA256.hash(data: wrongMessageData)
+        let wrongMessageHashData = Data(wrongMessageHash)
+        
+        let isValidWithWrongMessage = Secp256k1.verify(signature: signature, for: wrongMessageHashData, publicKey: devicePublicKey)
+        #expect(!isValidWithWrongMessage)
+    }
+}
 }
 
 // MARK: - Test Helpers
@@ -474,4 +651,6 @@ enum TestError: Error {
     case bech32EncodingFailed
     case bech32DecodingFailed
     case ed25519KeyDerivationFailed
+    case messageEncodingFailed
+    case signingFailed
 }
