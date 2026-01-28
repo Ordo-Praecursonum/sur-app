@@ -25,6 +25,7 @@ struct AccountView: View {
     @State private var showSignMessageDialog = false
     @State private var messageToSign = ""
     @State private var signedSignature: String?
+    @State private var messageHash: String?
     @State private var showSignatureResult = false
     
     // MARK: - Body
@@ -243,7 +244,8 @@ struct AccountView: View {
                 SignatureResultSheet(
                     isPresented: $showSignatureResult,
                     signature: signedSignature ?? "",
-                    message: messageToSign
+                    message: messageToSign,
+                    messageHash: messageHash ?? ""
                 )
             }
             .onChange(of: showSignatureResult) { _, newValue in
@@ -344,6 +346,10 @@ struct AccountView: View {
         let messageHash = SHA256.hash(data: messageData)
         let messageHashData = Data(messageHash)
         
+        // Store the message hash as hex for display
+        let messageHashHex = messageHashData.map { String(format: "%02x", $0) }.joined()
+        self.messageHash = messageHashHex
+        
         // Sign the message hash with device private key
         guard let signature = Secp256k1.sign(messageHash: messageHashData, with: devicePrivateKey) else {
             errorMessage = "Failed to sign message"
@@ -432,7 +438,11 @@ struct SignatureResultSheet: View {
     @Binding var isPresented: Bool
     let signature: String
     let message: String
+    let messageHash: String
     @State private var showCopied = false
+    @State private var showPrivateKeyCopied = false
+    @State private var showPublicKeyCopied = false
+    @State private var showHashCopied = false
     
     var body: some View {
         NavigationStack {
@@ -481,6 +491,41 @@ struct SignatureResultSheet: View {
                     }
                     .padding(.horizontal)
                     
+                    // Message Hash (SHA-256)
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Message Hash (SHA-256)")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        
+                        Text(messageHash)
+                            .font(.system(.caption, design: .monospaced))
+                            .lineLimit(nil)
+                            .multilineTextAlignment(.leading)
+                            .padding()
+                            .background(Color(.systemGray6))
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                        
+                        Button(action: {
+                            UIPasteboard.general.string = messageHash
+                            withAnimation {
+                                showHashCopied = true
+                            }
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                                withAnimation {
+                                    showHashCopied = false
+                                }
+                            }
+                        }) {
+                            HStack {
+                                Image(systemName: "doc.on.doc")
+                                Text(showHashCopied ? "Copied!" : "Copy Hash")
+                            }
+                            .font(.caption)
+                            .foregroundColor(.orange)
+                        }
+                    }
+                    .padding(.horizontal)
+                    
                     // Signature
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Signature (Hex)")
@@ -512,6 +557,89 @@ struct SignatureResultSheet: View {
                             }
                             .font(.caption)
                             .foregroundColor(.orange)
+                        }
+                    }
+                    .padding(.horizontal)
+                    
+                    // Device Public Key
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Device Public Key (For Verification)")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        
+                        if let devicePublicKey = DeviceIDManager.shared.getStoredDevicePublicKey() {
+                            let publicKeyHex = devicePublicKey.map { String(format: "%02x", $0) }.joined()
+                            
+                            Text(publicKeyHex)
+                                .font(.system(.caption, design: .monospaced))
+                                .lineLimit(nil)
+                                .multilineTextAlignment(.leading)
+                                .padding()
+                                .background(Color(.systemGray6))
+                                .clipShape(RoundedRectangle(cornerRadius: 8))
+                            
+                            Button(action: {
+                                UIPasteboard.general.string = publicKeyHex
+                                withAnimation {
+                                    showPublicKeyCopied = true
+                                }
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                                    withAnimation {
+                                        showPublicKeyCopied = false
+                                    }
+                                }
+                            }) {
+                                HStack {
+                                    Image(systemName: "doc.on.doc")
+                                    Text(showPublicKeyCopied ? "Copied!" : "Copy Public Key")
+                                }
+                                .font(.caption)
+                                .foregroundColor(.orange)
+                            }
+                        }
+                    }
+                    .padding(.horizontal)
+                    
+                    // Device Private Key (for testing on external sites)
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Device Private Key (For Testing)")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        
+                        Text("⚠️ Keep this secret! Only use on trusted verification sites for testing.")
+                            .font(.caption2)
+                            .foregroundColor(.red)
+                            .padding(.vertical, 4)
+                        
+                        if let devicePrivateKey = DeviceIDManager.shared.getStoredDevicePrivateKey() {
+                            let privateKeyHex = devicePrivateKey.map { String(format: "%02x", $0) }.joined()
+                            
+                            Text(privateKeyHex)
+                                .font(.system(.caption, design: .monospaced))
+                                .lineLimit(nil)
+                                .multilineTextAlignment(.leading)
+                                .padding()
+                                .background(Color(.systemGray6))
+                                .clipShape(RoundedRectangle(cornerRadius: 8))
+                            
+                            Button(action: {
+                                UIPasteboard.general.string = privateKeyHex
+                                withAnimation {
+                                    showPrivateKeyCopied = true
+                                }
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                                    withAnimation {
+                                        showPrivateKeyCopied = false
+                                    }
+                                }
+                            }) {
+                                HStack {
+                                    Image(systemName: "doc.on.doc")
+                                    Text(showPrivateKeyCopied ? "Copied!" : "Copy Private Key")
+                                }
+                                .font(.caption)
+                                .foregroundColor(.orange)
+                            }
                         }
                     }
                     .padding(.horizontal)
