@@ -841,7 +841,7 @@ struct SurTests {
         let isValid = Secp256k1.verify(signature: signature, for: messageHashData, publicKey: devicePublicKey)
         #expect(isValid, "Signature should verify with device public key")
         
-        // Verify signature has normalized S value (Ethereum requirement)
+        // Verify signature has normalized S value (Ethereum requirement: S <= n/2)
         let s = signature.suffix(32)
         let sBytes = [UInt8](s)
         
@@ -853,17 +853,21 @@ struct SurTests {
             0xDF, 0xE9, 0x2F, 0x46, 0x68, 0x1B, 0x20, 0xA0
         ]
         
+        // Check if S <= n/2 (normalized/canonical form)
+        // Initialize to true because S == n/2 is acceptable
         var sIsNormalized = true
         for i in 0..<32 {
             if sBytes[i] < halfOrder[i] {
-                sIsNormalized = true
+                sIsNormalized = true  // S < n/2, definitely normalized
                 break
             }
             if sBytes[i] > halfOrder[i] {
-                sIsNormalized = false
+                sIsNormalized = false  // S > n/2, not normalized
                 break
             }
+            // If equal, continue to next byte to check remaining bytes
         }
+        // If loop completes without breaking, S == n/2 exactly (acceptable, sIsNormalized stays true)
         
         #expect(sIsNormalized, "Signature should have normalized S value (Ethereum compatible)")
         

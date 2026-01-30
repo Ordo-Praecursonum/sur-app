@@ -251,19 +251,16 @@ final class DeviceIDManager {
         
         // Use the same Ethereum address derivation as EthereumKeyManager
         // This proves device keys are fully compatible with Ethereum
-        do {
-            // Hash the public key coordinates (excluding 0x04 prefix) with Keccak-256
-            let publicKeyToHash = Data(devicePublicKey.dropFirst())
-            let hash = Keccak256.hash(publicKeyToHash)
-            
-            // Take last 20 bytes as the address
-            let addressBytes = hash.suffix(20)
-            let addressHex = addressBytes.map { String(format: "%02x", $0) }.joined()
-            
-            // Apply EIP-55 checksum
-            return EthereumKeyManager.checksumAddress(addressHex)
-        } catch {
-            return nil
-        }
+        
+        // Hash the public key coordinates (excluding 0x04 prefix) with Keccak-256
+        let publicKeyToHash = Data(devicePublicKey.dropFirst())
+        let hash = Keccak256.hash(publicKeyToHash)
+        
+        // Take last 20 bytes as the address
+        let addressBytes = hash.suffix(20)
+        let addressHex = addressBytes.map { String(format: "%02x", $0) }.joined()
+        
+        // Apply EIP-55 checksum
+        return EthereumKeyManager.checksumAddress(addressHex)
     }
 }
