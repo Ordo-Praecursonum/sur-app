@@ -964,6 +964,11 @@ struct SurTests {
             throw TestError.derConversionFailed
         }
         
+        // Prepare hex strings for debugging
+        let publicKeyHex = publicKey.map { String(format: "%02x", $0) }.joined()
+        let compactHex = compactSignature.map { String(format: "%02x", $0) }.joined()
+        let derHex = derSignature.map { String(format: "%02x", $0) }.joined()
+        
         // Verify signature with our own public key
         let isValid = Secp256k1.verify(signature: compactSignature, for: messageHashData, publicKey: publicKey)
         
@@ -983,11 +988,6 @@ struct SurTests {
         if !isValid {
             print("⚠️ WARNING: Signature verification failed - likely due to non-deterministic signing in P256K")
         }
-        
-        // Print all values for debugging
-        let publicKeyHex = publicKey.map { String(format: "%02x", $0) }.joined()
-        let compactHex = compactSignature.map { String(format: "%02x", $0) }.joined()
-        let derHex = derSignature.map { String(format: "%02x", $0) }.joined()
         
         print("=== Test with Specific Private Key ===")
         print("Private Key: \(privKeyHex)")
