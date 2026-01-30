@@ -725,6 +725,109 @@ struct SurTests {
         #expect(isValid, "Normalized signature should still verify correctly")
     }
     
+    @Test func testSecp256k1SignatureDeterminism() async throws {
+        // Test that signing the same message twice produces the same signature
+        // This verifies RFC 6979 deterministic signing
+        
+        let privateKey = Data([
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01
+        ])
+        
+        let message = "Hello"
+        guard let messageData = message.data(using: .utf8) else {
+            throw TestError.messageEncodingFailed
+        }
+        
+        let messageHash = SHA256.hash(data: messageData)
+        let messageHashData = Data(messageHash)
+        
+        // Sign the message twice
+        guard let signature1 = Secp256k1.sign(messageHash: messageHashData, with: privateKey) else {
+            throw TestError.signingFailed
+        }
+        
+        guard let signature2 = Secp256k1.sign(messageHash: messageHashData, with: privateKey) else {
+            throw TestError.signingFailed
+        }
+        
+        // Signatures should be identical (RFC 6979 deterministic)
+        let sig1Hex = signature1.map { String(format: "%02x", $0) }.joined()
+        let sig2Hex = signature2.map { String(format: "%02x", $0) }.joined()
+        
+        print("=== Determinism Test ===")
+        print("Signature 1: \(sig1Hex)")
+        print("Signature 2: \(sig2Hex)")
+        print("Are identical: \(signature1 == signature2)")
+        print("=== End Test ===")
+        
+        #expect(signature1 == signature2, "Signatures must be deterministic (RFC 6979)")
+    }
+    
+    @Test func testSecp256k1SignatureWithExactTestVector() async throws {
+        // Test with EXACT private key from issue to generate signature for comparison  
+        let privKeyHex = "5a2303b00ee362ecb3cbf7509e3400ac9522abd8a7801a4da007379ba44d297c"
+        guard let privateKey = hexStringToData(privKeyHex) else {
+            throw TestError.messageEncodingFailed
+        }
+        
+        // Derive public key
+        guard let publicKey = Secp256k1.derivePublicKey(from: privateKey) else {
+            throw TestError.publicKeyDerivationFailed
+        }
+        
+        let message = "Hello"
+        guard let messageData = message.data(using: .utf8) else {
+            throw TestError.messageEncodingFailed
+        }
+        
+        let messageHash = SHA256.hash(data: messageData)
+        let messageHashData = Data(messageHash)
+        
+        // Sign multiple times to check determinism
+        var signatures: [String] = []
+        var derSignatures: [String] = []
+        for i in 1...3 {
+            guard let sig = Secp256k1.sign(messageHash: messageHashData, with: privateKey) else {
+                throw TestError.signingFailed
+            }
+            let compactHex = sig.map { String(format: "%02x", $0) }.joined()
+            signatures.append(compactHex)
+            
+            // Also get DER
+            if let derSig = Secp256k1.convertToDER(signature: sig) {
+                let derHex = derSig.map { String(format: "%02x", $0) }.joined()
+                derSignatures.append(derHex)
+            }
+        }
+        
+        print("=== Exact Test Vector - Multiple Attempts ===")
+        print("Private Key: \(privKeyHex)")
+        print("Public Key: \(publicKey.map { String(format: "%02x", $0) }.joined())")
+        print("Message: \(message)")
+        print("Hash: \(messageHashData.map { String(format: "%02x", $0) }.joined())")
+        print()
+        print("Compact Signature Attempt 1: \(signatures[0])")
+        print("Compact Signature Attempt 2: \(signatures[1])")
+        print("Compact Signature Attempt 3: \(signatures[2])")
+        print("All compact identical: \(signatures[0] == signatures[1] && signatures[1] == signatures[2])")
+        print()
+        if derSignatures.count == 3 {
+            print("DER Signature Attempt 1: \(derSignatures[0])")
+            print("DER Signature Attempt 2: \(derSignatures[1])")
+            print("DER Signature Attempt 3: \(derSignatures[2])")
+            print("All DER identical: \(derSignatures[0] == derSignatures[1] && derSignatures[1] == derSignatures[2])")
+        }
+        print("=== End Test ===")
+        
+        // Verify determinism
+        #expect(signatures[0] == signatures[1], "Signatures must be deterministic")
+        #expect(signatures[1] == signatures[2], "Signatures must be deterministic")
+    }
+    
+    
     @Test func testSecp256k1SignatureDERConversion() async throws {
         // Test that we can convert signatures to DER format for external tools
         
