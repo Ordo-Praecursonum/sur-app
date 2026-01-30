@@ -5,6 +5,7 @@
 //  Created by Mathe Eliel on 04/10/2025.
 //
 
+import Foundation
 import Testing
 import CryptoKit
 @testable import Sur
