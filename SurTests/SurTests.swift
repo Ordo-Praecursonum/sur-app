@@ -791,7 +791,8 @@ struct SurTests {
         // Test that device keys are fully compatible with Ethereum
         // Device keys use secp256k1 curve (same as Ethereum) and can be converted to Ethereum addresses
         
-        // Use a known Ethereum private key for testing
+        // Use a known Ethereum private key as the seed for device key derivation
+        // The actual device private key will be HMAC-SHA256(ethereumPrivateKey, deviceUUID)
         let ethereumPrivateKey = Data([
             0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
             0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
