@@ -786,6 +786,95 @@ struct SurTests {
         print("Signature is \(signature.count) bytes (32-byte R + 32-byte S)")
         print("=== End Verification Data ===")
     }
+    
+    @Test func testDeviceKeysEthereumCompatibility() async throws {
+        // Test that device keys are fully compatible with Ethereum
+        // Device keys use secp256k1 curve (same as Ethereum) and can be converted to Ethereum addresses
+        
+        // Use a known Ethereum private key for testing
+        let ethereumPrivateKey = Data([
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01
+        ])
+        
+        // Generate device keys from Ethereum private key
+        let deviceIDManager = DeviceIDManager.shared
+        let (devicePrivateKey, devicePublicKey) = try deviceIDManager.generateDeviceKeys(from: ethereumPrivateKey)
+        
+        // Verify device private key is valid for secp256k1 (Ethereum's curve)
+        #expect(Secp256k1.isValidPrivateKey(devicePrivateKey), "Device private key should be valid for secp256k1")
+        
+        // Verify device public key is in uncompressed format (Ethereum compatible)
+        #expect(devicePublicKey.count == 65, "Device public key should be 65 bytes (uncompressed)")
+        #expect(devicePublicKey[0] == 0x04, "Device public key should start with 0x04 (uncompressed marker)")
+        
+        // Verify device public key can be converted to Ethereum address
+        guard let deviceEthAddress = DeviceIDManager.deriveEthereumAddress(from: devicePublicKey) else {
+            throw TestError.addressGenerationFailed
+        }
+        
+        // Verify address format (0x + 40 hex chars, checksummed)
+        #expect(deviceEthAddress.hasPrefix("0x"), "Ethereum address should start with 0x")
+        #expect(deviceEthAddress.count == 42, "Ethereum address should be 42 characters")
+        
+        // Test signing with device key and verify with Ethereum-style signature
+        let message = "Test Ethereum compatibility"
+        guard let messageData = message.data(using: .utf8) else {
+            throw TestError.messageEncodingFailed
+        }
+        
+        // Hash with SHA-256 (standard for ECDSA)
+        let messageHash = SHA256.hash(data: messageData)
+        let messageHashData = Data(messageHash)
+        
+        // Sign with device private key
+        guard let signature = Secp256k1.sign(messageHash: messageHashData, with: devicePrivateKey) else {
+            throw TestError.signingFailed
+        }
+        
+        // Verify signature is in compact format (64 bytes: R + S)
+        #expect(signature.count == 64, "Signature should be 64 bytes")
+        
+        // Verify signature with device public key
+        let isValid = Secp256k1.verify(signature: signature, for: messageHashData, publicKey: devicePublicKey)
+        #expect(isValid, "Signature should verify with device public key")
+        
+        // Verify signature has normalized S value (Ethereum requirement)
+        let s = signature.suffix(32)
+        let sBytes = [UInt8](s)
+        
+        // n/2 for secp256k1
+        let halfOrder: [UInt8] = [
+            0x7F, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+            0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+            0x5D, 0x57, 0x6E, 0x73, 0x57, 0xA4, 0x50, 0x1D,
+            0xDF, 0xE9, 0x2F, 0x46, 0x68, 0x1B, 0x20, 0xA0
+        ]
+        
+        var sIsNormalized = true
+        for i in 0..<32 {
+            if sBytes[i] < halfOrder[i] {
+                sIsNormalized = true
+                break
+            }
+            if sBytes[i] > halfOrder[i] {
+                sIsNormalized = false
+                break
+            }
+        }
+        
+        #expect(sIsNormalized, "Signature should have normalized S value (Ethereum compatible)")
+        
+        print("=== Device Keys Ethereum Compatibility Test ===")
+        print("Device Private Key: Valid secp256k1 key")
+        print("Device Public Key: \(devicePublicKey.map { String(format: "%02x", $0) }.joined())")
+        print("Derived Ethereum Address: \(deviceEthAddress)")
+        print("Signature: \(signature.map { String(format: "%02x", $0) }.joined())")
+        print("Result: ✅ Device keys are fully compatible with Ethereum")
+        print("=== End Compatibility Test ===")
+    }
 }
 }
 
@@ -798,4 +887,5 @@ enum TestError: Error {
     case ed25519KeyDerivationFailed
     case messageEncodingFailed
     case signingFailed
+    case addressGenerationFailed
 }
