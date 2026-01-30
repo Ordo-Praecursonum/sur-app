@@ -615,14 +615,40 @@ struct SurTests {
     }
     
     @Test func testDeviceKeySigningAndVerification() async throws {
-        // Test that device keys can actually sign and verify messages
-        let userPrivateKey = Data(repeating: 0x01, count: 32)
-        let deviceIDManager = DeviceIDManager.shared
+        // Test with specific private key and expected public key
+        // Private key: 8fc48229857b19dd716f3cea52bd5ea46da3e9129897a459fcd819baaa28df86
+        // Expected public key: 045c52b7332a0d16084a3fff84a2408a670108347f860c707365dc75f625e38168e675554f38d636a85f50baf998cc58708f841c3c55b5df5fe3155676f7b1b70c
         
-        let (devicePrivateKey, devicePublicKey) = try deviceIDManager.generateDeviceKeys(from: userPrivateKey)
+        let privateKeyHex = "8fc48229857b19dd716f3cea52bd5ea46da3e9129897a459fcd819baaa28df86"
+        let expectedPublicKeyHex = "045c52b7332a0d16084a3fff84a2408a670108347f860c707365dc75f625e38168e675554f38d636a85f50baf998cc58708f841c3c55b5df5fe3155676f7b1b70c"
         
-        // Create a test message
-        let message = "Test message from device"
+        guard let devicePrivateKey = hexStringToData(privateKeyHex) else {
+            throw TestError.messageEncodingFailed
+        }
+        
+        guard let expectedPublicKey = hexStringToData(expectedPublicKeyHex) else {
+            throw TestError.messageEncodingFailed
+        }
+        
+        // Derive public key from private key
+        guard let devicePublicKey = Secp256k1.derivePublicKey(from: devicePrivateKey) else {
+            throw TestError.publicKeyDerivationFailed
+        }
+        
+        // Verify the public key matches expected
+        let publicKeyHex = devicePublicKey.map { String(format: "%02x", $0) }.joined()
+        let expectedPubKeyHex = expectedPublicKey.map { String(format: "%02x", $0) }.joined()
+        
+        print("=== testDeviceKeySigningAndVerification ===")
+        print("Private Key: \(privateKeyHex)")
+        print("Derived Public Key: \(publicKeyHex)")
+        print("Expected Public Key: \(expectedPubKeyHex)")
+        print("Public keys match: \(publicKeyHex == expectedPubKeyHex)")
+        
+        #expect(devicePublicKey == expectedPublicKey, "Derived public key must match expected public key")
+        
+        // Create test message "Hello"
+        let message = "Hello"
         guard let messageData = message.data(using: .utf8) else {
             throw TestError.messageEncodingFailed
         }
@@ -630,6 +656,17 @@ struct SurTests {
         // Hash the message using SHA-256
         let messageHash = SHA256.hash(data: messageData)
         let messageHashData = Data(messageHash)
+        let messageHashHex = messageHashData.map { String(format: "%02x", $0) }.joined()
+        
+        // Expected hash for "Hello": 185f8db32271fe25f561a6fc938b2e264306ec304eda518007d1764826381969
+        let expectedHashHex = "185f8db32271fe25f561a6fc938b2e264306ec304eda518007d1764826381969"
+        
+        print("Message: \(message)")
+        print("SHA-256 Hash: \(messageHashHex)")
+        print("Expected Hash: \(expectedHashHex)")
+        print("Hashes match: \(messageHashHex == expectedHashHex)")
+        
+        #expect(messageHashHex == expectedHashHex, "Message hash must match expected SHA-256 hash")
         
         // Sign the message with device private key
         guard let signature = Secp256k1.sign(messageHash: messageHashData, with: devicePrivateKey) else {
@@ -639,9 +676,21 @@ struct SurTests {
         // Verify the signature is exactly 64 bytes (R + S in compact format)
         #expect(signature.count == 64)
         
+        let signatureHex = signature.map { String(format: "%02x", $0) }.joined()
+        print("Signature (compact): \(signatureHex)")
+        
+        // Convert to DER format for external tool compatibility
+        if let derSignature = Secp256k1.convertToDER(signature: signature) {
+            let derHex = derSignature.map { String(format: "%02x", $0) }.joined()
+            print("Signature (DER): \(derHex)")
+        }
+        
         // Verify the signature with device public key
         let isValid = Secp256k1.verify(signature: signature, for: messageHashData, publicKey: devicePublicKey)
-        #expect(isValid)
+        print("Signature verifies: \(isValid)")
+        print("=== End Test ===")
+        
+        #expect(isValid, "Signature must verify with the correct public key")
         
         // Verify that wrong message doesn't verify
         let wrongMessage = "Different message"
@@ -652,7 +701,7 @@ struct SurTests {
         let wrongMessageHashData = Data(wrongMessageHash)
         
         let isValidWithWrongMessage = Secp256k1.verify(signature: signature, for: wrongMessageHashData, publicKey: devicePublicKey)
-        #expect(!isValidWithWrongMessage)
+        #expect(!isValidWithWrongMessage, "Signature must not verify with wrong message")
     }
     
     @Test func testSecp256k1SignatureNormalization() async throws {
