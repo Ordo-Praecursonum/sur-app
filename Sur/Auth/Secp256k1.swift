@@ -383,20 +383,20 @@ final class Secp256k1 {
         
         // Remove leading zeros from R and S, but keep at least one byte
         var rTrimmed = r
-        while rTrimmed.count > 1 && rTrimmed[0] == 0x00 {
-            rTrimmed = rTrimmed.dropFirst()
+        while rTrimmed.count > 1 && rTrimmed.first == 0x00 {
+            rTrimmed = Data(rTrimmed.dropFirst())
         }
         
         var sTrimmed = s
-        while sTrimmed.count > 1 && sTrimmed[0] == 0x00 {
-            sTrimmed = sTrimmed.dropFirst()
+        while sTrimmed.count > 1 && sTrimmed.first == 0x00 {
+            sTrimmed = Data(sTrimmed.dropFirst())
         }
         
         // Add leading zero if high bit is set (to keep it positive)
-        if rTrimmed[0] & 0x80 != 0 {
+        if let firstR = rTrimmed.first, firstR & 0x80 != 0 {
             rTrimmed.insert(0x00, at: 0)
         }
-        if sTrimmed[0] & 0x80 != 0 {
+        if let firstS = sTrimmed.first, firstS & 0x80 != 0 {
             sTrimmed.insert(0x00, at: 0)
         }
         
