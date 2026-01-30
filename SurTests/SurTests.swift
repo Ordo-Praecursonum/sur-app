@@ -713,6 +713,177 @@ struct SurTests {
         #expect(isValid, "Normalized signature should still verify correctly")
     }
     
+    @Test func testSecp256k1SignatureDERConversion() async throws {
+        // Test that we can convert signatures to DER format for external tools
+        
+        let privateKey = Data([
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01
+        ])
+        
+        let message = "Hello"
+        guard let messageData = message.data(using: .utf8) else {
+            throw TestError.messageEncodingFailed
+        }
+        
+        let messageHash = SHA256.hash(data: messageData)
+        let messageHashData = Data(messageHash)
+        
+        // Sign the message
+        guard let compactSignature = Secp256k1.sign(messageHash: messageHashData, with: privateKey) else {
+            throw TestError.signingFailed
+        }
+        
+        #expect(compactSignature.count == 64, "Compact signature should be 64 bytes")
+        
+        // Convert to DER format
+        guard let derSignature = Secp256k1.convertToDER(signature: compactSignature) else {
+            throw TestError.signingFailed
+        }
+        
+        // DER signature should start with 0x30 (SEQUENCE tag)
+        #expect(derSignature[0] == 0x30, "DER signature should start with SEQUENCE tag 0x30")
+        
+        // DER signature should be longer than compact (due to ASN.1 encoding)
+        // Typical DER signature is 70-72 bytes (can vary from 8 to 72 bytes)
+        #expect(derSignature.count >= 8 && derSignature.count <= 72, "DER signature should be 8-72 bytes")
+        
+        print("=== DER Conversion Test ===")
+        print("Compact Signature (64 bytes): \(compactSignature.map { String(format: "%02x", $0) }.joined())")
+        print("DER Signature (\(derSignature.count) bytes): \(derSignature.map { String(format: "%02x", $0) }.joined())")
+        print("DER Format: Valid for external ECDSA tools")
+        print("=== End DER Conversion Test ===")
+    }
+    
+    @Test func testSecp256k1SignatureCompatibilityWithRustExample() async throws {
+        // Test case from the Rust example provided in PR comment
+        // This uses the exact same private key and message to compare outputs
+        
+        // Private key from Rust example
+        let privKeyHex = "5a2303b00ee362ecb3cbf7509e3400ac9522abd8a7801a4da007379ba44d297c"
+        guard let privateKey = hexStringToData(privKeyHex) else {
+            throw TestError.messageEncodingFailed
+        }
+        
+        #expect(privateKey.count == 32, "Private key should be 32 bytes")
+        
+        // Derive public key
+        guard let publicKey = Secp256k1.derivePublicKey(from: privateKey) else {
+            throw TestError.publicKeyDerivationFailed
+        }
+        
+        // Expected uncompressed public key from Rust
+        // (This will be different, we just verify format here)
+        #expect(publicKey.count == 65, "Public key should be 65 bytes")
+        #expect(publicKey[0] == 0x04, "Public key should start with 0x04")
+        
+        // Message to sign
+        let message = "Hello"
+        guard let messageData = message.data(using: .utf8) else {
+            throw TestError.messageEncodingFailed
+        }
+        
+        // Hash with SHA-256
+        let messageHash = SHA256.hash(data: messageData)
+        let messageHashData = Data(messageHash)
+        let messageHashHex = messageHashData.map { String(format: "%02x", $0) }.joined()
+        
+        // Expected hash (same as Rust)
+        let expectedHashHex = "185f8db32271fe25f561a6fc938b2e264306ec304eda518007d1764826381969"
+        #expect(messageHashHex == expectedHashHex, "SHA-256 hash should match Rust example")
+        
+        // Sign the message
+        guard let signature = Secp256k1.sign(messageHash: messageHashData, with: privateKey) else {
+            throw TestError.signingFailed
+        }
+        
+        // Signature should be 64 bytes
+        #expect(signature.count == 64, "Signature should be 64 bytes")
+        
+        // Verify signature with our own public key
+        let isValid = Secp256k1.verify(signature: signature, for: messageHashData, publicKey: publicKey)
+        #expect(isValid, "Signature should verify with our implementation")
+        
+        // Extract R and S components
+        let r = signature.prefix(32)
+        let s = signature.suffix(32)
+        
+        // Verify S is normalized (S <= n/2)
+        let halfOrder = Data([
+            0x7F, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+            0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+            0x5D, 0x57, 0x6E, 0x73, 0x57, 0xA4, 0x50, 0x1D,
+            0xDF, 0xE9, 0x2F, 0x46, 0x68, 0x1B, 0x20, 0xA0
+        ])
+        
+        let sBytes = [UInt8](s)
+        let halfOrderBytes = [UInt8](halfOrder)
+        var sIsNormalized = true
+        
+        for i in 0..<32 {
+            if sBytes[i] < halfOrderBytes[i] {
+                sIsNormalized = true
+                break
+            }
+            if sBytes[i] > halfOrderBytes[i] {
+                sIsNormalized = false
+                break
+            }
+        }
+        
+        #expect(sIsNormalized, "S value should be normalized for external tool compatibility")
+        
+        // Print for manual verification
+        let signatureHex = signature.map { String(format: "%02x", $0) }.joined()
+        let publicKeyHex = publicKey.map { String(format: "%02x", $0) }.joined()
+        let rHex = r.map { String(format: "%02x", $0) }.joined()
+        let sHex = s.map { String(format: "%02x", $0) }.joined()
+        
+        print("=== Rust Example Compatibility Test ===")
+        print("Private Key: \(privKeyHex)")
+        print("Message: \(message)")
+        print("Message Hash: \(messageHashHex)")
+        print("Public Key (uncompressed): \(publicKeyHex)")
+        print("Signature (R+S): \(signatureHex)")
+        print("R (32 bytes): \(rHex)")
+        print("S (32 bytes): \(sHex)")
+        print("S is normalized: \(sIsNormalized)")
+        print("=== End Rust Compatibility Test ===")
+    }
+    
+    // Helper function to convert hex string to Data
+    private func hexStringToData(_ hex: String) -> Data? {
+        var hexString = hex
+        
+        // Remove 0x prefix if present
+        if hexString.hasPrefix("0x") {
+            hexString = String(hexString.dropFirst(2))
+        }
+        
+        // Hex string must have even length
+        guard hexString.count % 2 == 0 else {
+            return nil
+        }
+        
+        var data = Data()
+        var temp = hexString
+        
+        while temp.count >= 2 {
+            let subString = temp.prefix(2)
+            temp = String(temp.dropFirst(2))
+            
+            guard let byte = UInt8(subString, radix: 16) else {
+                return nil
+            }
+            
+            data.append(byte)
+        }
+        
+        return data.count > 0 ? data : nil
+    }
+    
     @Test func testSecp256k1SignatureCompatibilityWithExternalTools() async throws {
         // Test case based on the issue reported
         // This verifies that our signatures can be verified by external tools

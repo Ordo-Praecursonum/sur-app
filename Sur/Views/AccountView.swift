@@ -25,6 +25,7 @@ struct AccountView: View {
     @State private var showSignMessageDialog = false
     @State private var messageToSign = ""
     @State private var signedSignature: String?
+    @State private var signedSignatureDER: String?
     @State private var messageHash: String?
     @State private var showSignatureResult = false
     
@@ -244,6 +245,7 @@ struct AccountView: View {
                 SignatureResultSheet(
                     isPresented: $showSignatureResult,
                     signature: signedSignature ?? "",
+                    signatureDER: signedSignatureDER,
                     message: messageToSign,
                     messageHash: messageHash ?? ""
                 )
@@ -357,9 +359,15 @@ struct AccountView: View {
             return
         }
         
-        // Convert signature to hex string
+        // Convert signature to hex string (compact R+S format)
         let signatureHex = signature.map { String(format: "%02x", $0) }.joined()
         signedSignature = signatureHex
+        
+        // Also convert to DER format for external tool compatibility
+        if let derSignature = Secp256k1.convertToDER(signature: signature) {
+            let derHex = derSignature.map { String(format: "%02x", $0) }.joined()
+            signedSignatureDER = derHex
+        }
         
         // Close the sign dialog and show the result
         showSignMessageDialog = false
@@ -437,9 +445,11 @@ struct SignMessageSheet: View {
 struct SignatureResultSheet: View {
     @Binding var isPresented: Bool
     let signature: String
+    let signatureDER: String?
     let message: String
     let messageHash: String
     @State private var showCopied = false
+    @State private var showCopiedDER = false
     @State private var showPrivateKeyCopied = false
     @State private var showPublicKeyCopied = false
     @State private var showHashCopied = false
@@ -526,9 +536,9 @@ struct SignatureResultSheet: View {
                     }
                     .padding(.horizontal)
                     
-                    // Signature
+                    // Signature (Compact R+S format - 64 bytes)
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("Signature (Hex)")
+                        Text("Signature - Compact Format (R+S, 64 bytes)")
                             .font(.caption)
                             .foregroundColor(.secondary)
                         
@@ -553,13 +563,55 @@ struct SignatureResultSheet: View {
                         }) {
                             HStack {
                                 Image(systemName: "doc.on.doc")
-                                Text(showCopied ? "Copied!" : "Copy Signature")
+                                Text(showCopied ? "Copied!" : "Copy Compact Signature")
                             }
                             .font(.caption)
                             .foregroundColor(.orange)
                         }
                     }
                     .padding(.horizontal)
+                    
+                    // Signature (DER format for external tools)
+                    if let derSig = signatureDER {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Signature - DER Format (for external tools)")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                            
+                            Text(derSig)
+                                .font(.system(.caption, design: .monospaced))
+                                .lineLimit(nil)
+                                .multilineTextAlignment(.leading)
+                                .padding()
+                                .background(Color(.systemGray6))
+                                .clipShape(RoundedRectangle(cornerRadius: 8))
+                            
+                            Button(action: {
+                                UIPasteboard.general.string = derSig
+                                withAnimation {
+                                    showCopiedDER = true
+                                }
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                                    withAnimation {
+                                        showCopiedDER = false
+                                    }
+                                }
+                            }) {
+                                HStack {
+                                    Image(systemName: "doc.on.doc")
+                                    Text(showCopiedDER ? "Copied!" : "Copy DER Signature")
+                                }
+                                .font(.caption)
+                                .foregroundColor(.orange)
+                            }
+                            
+                            Text("Use this DER format when verifying with external ECDSA tools like emn178.github.io")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                                .padding(.top, 4)
+                        }
+                        .padding(.horizontal)
+                    }
                     
                     // Device Public Key
                     VStack(alignment: .leading, spacing: 8) {

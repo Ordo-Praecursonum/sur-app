@@ -434,9 +434,13 @@ final class Secp256k1 {
     }
     
     /// Create DER-encoded signature from 64-byte raw R,S format
+    /// 
+    /// Converts a compact 64-byte signature (R + S) to DER (ASN.1) format.
+    /// DER format is commonly used by external ECDSA verification tools.
+    ///
     /// - Parameter rawSignature: 64-byte Data (32-byte R + 32-byte S)
     /// - Returns: DER-encoded signature or nil if creation fails
-    private static func createDERSignature(from rawSignature: Data) -> Data? {
+    static func convertToDER(signature rawSignature: Data) -> Data? {
         guard rawSignature.count == 64 else { return nil }
         let r = rawSignature.prefix(32)
         let s = rawSignature.suffix(32)
