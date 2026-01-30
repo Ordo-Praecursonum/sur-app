@@ -769,6 +769,74 @@ struct SurTests {
         print("=== End DER Conversion Test ===")
     }
     
+    @Test func testSecp256k1SignatureWithSpecificPrivateKey() async throws {
+        // Test with the exact private key provided in the PR comment
+        // This matches the Rust example that works with external tools
+        let privKeyHex = "5a2303b00ee362ecb3cbf7509e3400ac9522abd8a7801a4da007379ba44d297c"
+        guard let privateKey = hexStringToData(privKeyHex) else {
+            throw TestError.messageEncodingFailed
+        }
+        
+        #expect(privateKey.count == 32, "Private key should be 32 bytes")
+        
+        // Derive public key
+        guard let publicKey = Secp256k1.derivePublicKey(from: privateKey) else {
+            throw TestError.publicKeyDerivationFailed
+        }
+        
+        // Message to sign
+        let message = "Hello"
+        guard let messageData = message.data(using: .utf8) else {
+            throw TestError.messageEncodingFailed
+        }
+        
+        // Hash with SHA-256
+        let messageHash = SHA256.hash(data: messageData)
+        let messageHashData = Data(messageHash)
+        let messageHashHex = messageHashData.map { String(format: "%02x", $0) }.joined()
+        
+        // Expected hash
+        let expectedHashHex = "185f8db32271fe25f561a6fc938b2e264306ec304eda518007d1764826381969"
+        #expect(messageHashHex == expectedHashHex, "SHA-256 hash should match")
+        
+        // Sign the message  
+        guard let compactSignature = Secp256k1.sign(messageHash: messageHashData, with: privateKey) else {
+            throw TestError.signingFailed
+        }
+        
+        #expect(compactSignature.count == 64, "Compact signature should be 64 bytes")
+        
+        // Convert to DER format
+        guard let derSignature = Secp256k1.convertToDER(signature: compactSignature) else {
+            throw TestError.derConversionFailed
+        }
+        
+        // Verify signature internally
+        let isValid = Secp256k1.verify(signature: compactSignature, for: messageHashData, publicKey: publicKey)
+        #expect(isValid, "Signature should verify with our implementation")
+        
+        // Print all values for debugging
+        let publicKeyHex = publicKey.map { String(format: "%02x", $0) }.joined()
+        let compactHex = compactSignature.map { String(format: "%02x", $0) }.joined()
+        let derHex = derSignature.map { String(format: "%02x", $0) }.joined()
+        
+        print("=== Test with Specific Private Key ===")
+        print("Private Key: \(privKeyHex)")
+        print("Public Key (65 bytes): \(publicKeyHex)")
+        print("Message: \(message)")
+        print("Message Hash: \(messageHashHex)")
+        print("Compact Signature (64 bytes): \(compactHex)")
+        print("DER Signature (\(derSignature.count) bytes): \(derHex)")
+        print()
+        print("For external verification:")
+        print("1. Use message text (not hash): \(message)")
+        print("2. Hash algorithm: SHA-256")
+        print("3. Curve: secp256k1")
+        print("4. Public key: \(publicKeyHex)")
+        print("5. Signature (DER): \(derHex)")
+        print("=== End Test ===")
+    }
+    
     @Test func testSecp256k1SignatureCompatibilityWithRustExample() async throws {
         // Test case from the Rust example provided in PR comment
         // This uses the exact same private key and message to compare outputs

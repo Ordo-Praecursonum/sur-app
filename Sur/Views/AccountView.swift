@@ -611,10 +611,41 @@ struct SignatureResultSheet: View {
                                 .foregroundColor(.orange)
                             }
                             
-                            Text("Use this DER format when verifying with external ECDSA tools like https://emn178.github.io/online-tools/ecdsa/sign/")
+                            Text("⚠️ Important: When using external tools, enter the ORIGINAL MESSAGE (not the hash) in the Input field. The tool will hash it automatically.")
                                 .font(.caption2)
-                                .foregroundColor(.secondary)
+                                .foregroundColor(.orange)
+                                .fontWeight(.semibold)
                                 .padding(.top, 4)
+                            
+                            // Verification guide
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("External Tool Verification Steps:")
+                                    .font(.caption2)
+                                    .fontWeight(.semibold)
+                                    .foregroundColor(.secondary)
+                                    .padding(.top, 8)
+                                
+                                Text("1. Input: Enter '\(message)' (the message text, NOT the hash)")
+                                    .font(.caption2)
+                                    .foregroundColor(.secondary)
+                                
+                                Text("2. Curve: Select secp256k1")
+                                    .font(.caption2)
+                                    .foregroundColor(.secondary)
+                                
+                                Text("3. Hash: Select SHA-256")
+                                    .font(.caption2)
+                                    .foregroundColor(.secondary)
+                                
+                                Text("4. Public Key: Use the uncompressed public key below")
+                                    .font(.caption2)
+                                    .foregroundColor(.secondary)
+                                
+                                Text("5. Signature: Use the DER format signature above")
+                                    .font(.caption2)
+                                    .foregroundColor(.secondary)
+                            }
+                            .padding(.top, 4)
                         }
                         .padding(.horizontal)
                     }
