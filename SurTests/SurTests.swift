@@ -11,6 +11,18 @@ import CryptoKit
 
 struct SurTests {
 
+    // MARK: - Test Constants
+    
+    /// Half of the secp256k1 curve order (n/2)
+    /// Used to verify that S values are normalized (S <= n/2)
+    /// This is required by BIP-62, Ethereum, and most ECDSA verification tools
+    private static let secp256k1HalfOrder = Data([
+        0x7F, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+        0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+        0x5D, 0x57, 0x6E, 0x73, 0x57, 0xA4, 0x50, 0x1D,
+        0xDF, 0xE9, 0x2F, 0x46, 0x68, 0x1B, 0x20, 0xA0
+    ])
+
     // MARK: - Mnemonic Tests
     
     @Test func testMnemonicGeneration() async throws {
@@ -740,7 +752,7 @@ struct SurTests {
         
         // Convert to DER format
         guard let derSignature = Secp256k1.convertToDER(signature: compactSignature) else {
-            throw TestError.signingFailed
+            throw TestError.derConversionFailed
         }
         
         // DER signature should start with 0x30 (SEQUENCE tag)
@@ -1016,24 +1028,17 @@ struct SurTests {
         // Verify signature has normalized S value (Ethereum requirement: S <= n/2)
         let s = signature.suffix(32)
         let sBytes = [UInt8](s)
+        let halfOrderBytes = [UInt8](Self.secp256k1HalfOrder)
         
-        // n/2 for secp256k1
-        let halfOrder: [UInt8] = [
-            0x7F, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
-            0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
-            0x5D, 0x57, 0x6E, 0x73, 0x57, 0xA4, 0x50, 0x1D,
-            0xDF, 0xE9, 0x2F, 0x46, 0x68, 0x1B, 0x20, 0xA0
-        ]
-        
-        // Check if S <= n/2 (normalized/canonical form)
-        // Initialize to true because S == n/2 is acceptable
+        // Check byte-by-byte if S <= n/2
+        // Initialize to true because S == n/2 is acceptable (requirement is S <= n/2, not S < n/2)
         var sIsNormalized = true
         for i in 0..<32 {
-            if sBytes[i] < halfOrder[i] {
+            if sBytes[i] < halfOrderBytes[i] {
                 sIsNormalized = true  // S < n/2, definitely normalized
                 break
             }
-            if sBytes[i] > halfOrder[i] {
+            if sBytes[i] > halfOrderBytes[i] {
                 sIsNormalized = false  // S > n/2, not normalized
                 break
             }
@@ -1064,4 +1069,5 @@ enum TestError: Error {
     case messageEncodingFailed
     case signingFailed
     case addressGenerationFailed
+    case derConversionFailed
 }

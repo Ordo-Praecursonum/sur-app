@@ -367,6 +367,12 @@ struct AccountView: View {
         if let derSignature = Secp256k1.convertToDER(signature: signature) {
             let derHex = derSignature.map { String(format: "%02x", $0) }.joined()
             signedSignatureDER = derHex
+        } else {
+            // DER conversion failure is non-critical - compact format is still available
+            // External tools that support compact R+S format can still verify the signature
+            #if DEBUG
+            print("[AccountView] DER conversion failed, only compact signature available")
+            #endif
         }
         
         // Close the sign dialog and show the result
@@ -605,7 +611,7 @@ struct SignatureResultSheet: View {
                                 .foregroundColor(.orange)
                             }
                             
-                            Text("Use this DER format when verifying with external ECDSA tools like emn178.github.io")
+                            Text("Use this DER format when verifying with external ECDSA tools like https://emn178.github.io/online-tools/ecdsa/sign/")
                                 .font(.caption2)
                                 .foregroundColor(.secondary)
                                 .padding(.top, 4)
