@@ -231,4 +231,36 @@ final class DeviceIDManager {
         let suffix = String(publicKeyHex.suffix(6))
         return "\(prefix)...\(suffix)"
     }
+    
+    /// Generate Ethereum-compatible address from device public key
+    ///
+    /// This demonstrates that device keys are fully compatible with Ethereum.
+    /// Device keys use the same secp256k1 curve as Ethereum, so the device public key
+    /// can be converted to an Ethereum address using the standard Keccak-256 hashing.
+    ///
+    /// **Note**: This is provided for compatibility verification. In practice, the device
+    /// keys are used for signing messages to prove device identity, not for holding funds.
+    ///
+    /// - Parameter devicePublicKey: 65-byte uncompressed device public key (0x04 + X + Y)
+    /// - Returns: Ethereum address with 0x prefix (EIP-55 checksummed)
+    static func deriveEthereumAddress(from devicePublicKey: Data) -> String? {
+        // Validate public key format
+        guard devicePublicKey.count == 65, devicePublicKey[0] == 0x04 else {
+            return nil
+        }
+        
+        // Use the same Ethereum address derivation as EthereumKeyManager
+        // This proves device keys are fully compatible with Ethereum
+        
+        // Hash the public key coordinates (excluding 0x04 prefix) with Keccak-256
+        let publicKeyToHash = Data(devicePublicKey.dropFirst())
+        let hash = Keccak256.hash(publicKeyToHash)
+        
+        // Take last 20 bytes as the address
+        let addressBytes = hash.suffix(20)
+        let addressHex = addressBytes.map { String(format: "%02x", $0) }.joined()
+        
+        // Apply EIP-55 checksum
+        return EthereumKeyManager.checksumAddress(addressHex)
+    }
 }
