@@ -164,6 +164,10 @@ class KeyboardViewController: UIInputViewController {
     private var deleteTimer: Timer?
     private var deleteRepeatInterval: TimeInterval = 0.1 // Initial repeat rate
     
+    // Keystroke logging
+    private let keystrokeLogger = KeystrokeLogger.shared
+    private var lastKeyPressLocation: CGPoint = .zero
+    
     private let letterRows = [
         ["q", "w", "e", "r", "t", "y", "u", "i", "o", "p"],
         ["a", "s", "d", "f", "g", "h", "j", "k", "l"],
@@ -558,7 +562,7 @@ class KeyboardViewController: UIInputViewController {
         
         // Hash label
         hashLabel = UILabel()
-        hashLabel.text = "#0x4D4...734"
+        hashLabel.text = "#0x000...000"
         hashLabel.font = UIFont.monospacedSystemFont(ofSize: 14, weight: .regular)
         hashLabel.textAlignment = .center
         hashLabel.translatesAutoresizingMaskIntoConstraints = false
@@ -654,6 +658,10 @@ class KeyboardViewController: UIInputViewController {
         sender.animatePress()
         triggerHapticFeedback()
         
+        // Capture the key press location for keystroke logging
+        let buttonFrame = sender.convert(sender.bounds, to: keyboardView)
+        lastKeyPressLocation = CGPoint(x: buttonFrame.midX, y: buttonFrame.midY)
+        
         // Show popup for character keys
         if case .character = sender.keyType {
             sender.showKeyPopup(in: keyboardView, isDarkMode: isDarkMode)
@@ -713,6 +721,9 @@ class KeyboardViewController: UIInputViewController {
             }
             textDocumentProxy.insertText(textToInsert)
             
+            // Log the keystroke
+            logKeystroke(key: textToInsert)
+            
             // Auto-disable shift after typing (unless caps lock)
             if shiftState == .on {
                 shiftState = .off
@@ -721,10 +732,12 @@ class KeyboardViewController: UIInputViewController {
             
         case .shift:
             handleShiftTap()
+            logKeystroke(key: "shift")
             
         case .delete:
             stopDeleteTimer()
             textDocumentProxy.deleteBackward()
+            logKeystroke(key: "delete")
             
         case .numbers:
             toggleMode()
@@ -734,9 +747,11 @@ class KeyboardViewController: UIInputViewController {
             
         case .space:
             textDocumentProxy.insertText(" ")
+            logKeystroke(key: "space")
             
         case .returnKey:
             textDocumentProxy.insertText("\n")
+            logKeystroke(key: "return")
             
         case .globe:
             // Handled by handleInputModeList
@@ -756,18 +771,59 @@ class KeyboardViewController: UIInputViewController {
             rebuildKeyboardForMode(.letters)
             
         case .check:
-            // Check button - can be customized for specific functionality
-            break
+            // Finalize keystroke session and update hash display
+            finalizeKeystrokeSession()
             
         case .copyHash:
             // Copy the hash to clipboard
             copyHashToClipboard()
         }
+        
+        // Update hash display with current session info
+        updateHashDisplay()
+    }
+    
+    // MARK: - Keystroke Logging
+    
+    private func logKeystroke(key: String) {
+        keystrokeLogger.recordKeystroke(
+            key: key,
+            xCoordinate: Double(lastKeyPressLocation.x),
+            yCoordinate: Double(lastKeyPressLocation.y)
+        )
+    }
+    
+    private func finalizeKeystrokeSession() {
+        guard keystrokeLogger.currentSessionKeystrokeCount > 0 else {
+            // No keystrokes to finalize
+            return
+        }
+        
+        if let session = keystrokeLogger.finalizeCurrentSession() {
+            // Update hash label with finalized session hash
+            hashLabel?.text = session.shortHash
+            
+            // Visual feedback
+            let originalColor = hashLabel?.textColor
+            hashLabel?.textColor = .systemGreen
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
+                self?.hashLabel?.textColor = originalColor
+            }
+            
+            triggerHapticFeedback()
+        }
+    }
+    
+    private func updateHashDisplay() {
+        // Update hash label with current session's short hash
+        if keystrokeLogger.currentSessionKeystrokeCount > 0 {
+            hashLabel?.text = keystrokeLogger.currentSessionShortHash
+        }
     }
     
     // MARK: - Copy Hash
     private func copyHashToClipboard() {
-        let hashText = hashLabel?.text ?? "#0x4D4...734"
+        let hashText = hashLabel?.text ?? "#0x000...000"
         UIPasteboard.general.string = hashText
         triggerHapticFeedback()
         
@@ -878,6 +934,13 @@ class KeyboardViewController: UIInputViewController {
     @objc private func emojiTapped(_ sender: UIButton) {
         guard let emoji = sender.titleLabel?.text else { return }
         textDocumentProxy.insertText(emoji)
+        
+        // Log the emoji keystroke
+        let buttonFrame = sender.convert(sender.bounds, to: keyboardView)
+        lastKeyPressLocation = CGPoint(x: buttonFrame.midX, y: buttonFrame.midY)
+        logKeystroke(key: emoji)
+        updateHashDisplay()
+        
         triggerHapticFeedback()
     }
     
