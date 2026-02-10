@@ -1516,19 +1516,19 @@ struct SurTests {
         _ = session.computeSessionHash()
         session.humanTypingScore = HumanTypingEvaluator.evaluate(session: session)
         
-        // Generate ZK proof
+        // Generate ZK proof (now SNARK-style v2.0.0)
         guard let proof = ZKProofGenerator.generateProof(for: session) else {
             throw TestError.signingFailed
         }
         
-        #expect(proof.version == "1.0.0")
+        #expect(proof.version == "2.0.0")
         #expect(!proof.commitment.isEmpty)
-        #expect(!proof.challenge.isEmpty)
-        #expect(!proof.response.isEmpty)
+        #expect(!proof.nullifier.isEmpty)  // Fiat-Shamir derived
+        #expect(!proof.proof.isEmpty)      // Proof element π
         #expect(proof.publicInputs.sessionHash == session.sessionHash)
         #expect(proof.publicInputs.keystrokeCount == 5)
         
-        // Verify the proof
+        // Verify the proof (non-interactive verification)
         let isValid = ZKProofGenerator.verifyProof(proof, session: session)
         #expect(isValid, "Generated ZK proof should be valid")
     }
@@ -1536,10 +1536,10 @@ struct SurTests {
     @Test func testZKProofVerification() async throws {
         // Test that invalid proofs fail verification
         let invalidProof = ZKTypingProof(
-            version: "1.0.0",
+            version: "2.0.0",
             commitment: "abc123",
-            challenge: "def456", // Invalid challenge
-            response: "ghi789",
+            nullifier: "def456", // Invalid nullifier
+            proof: "ghi789",
             publicInputs: ZKPublicInputs(
                 sessionHash: "0x1234",
                 keystrokeCount: 5,
@@ -1563,6 +1563,8 @@ struct SurTests {
         #expect(solidityCode.contains("function verifyProof"))
         #expect(solidityCode.contains("event ProofVerified"))
         #expect(solidityCode.contains("mapping(bytes32 => bool) public verifiedProofs"))
+        #expect(solidityCode.contains("SNARK"))  // New SNARK-style proof
+        #expect(solidityCode.contains("nullifier"))  // Non-interactive
     }
 }
 

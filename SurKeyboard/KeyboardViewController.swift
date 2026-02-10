@@ -823,8 +823,17 @@ class KeyboardViewController: UIInputViewController {
     
     // MARK: - Copy Hash
     private func copyHashToClipboard() {
-        let hashText = hashLabel?.text ?? "#0x000...000"
-        UIPasteboard.general.string = hashText
+        // Copy the full hash, not the shortened display version
+        let fullHash: String
+        if keystrokeLogger.currentSessionKeystrokeCount > 0 {
+            fullHash = keystrokeLogger.currentSessionFullHash
+        } else if let lastHash = keystrokeLogger.lastFinalizedSessionFullHash {
+            fullHash = lastHash
+        } else {
+            fullHash = "0x0000000000000000000000000000000000000000000000000000000000000000"
+        }
+        
+        UIPasteboard.general.string = fullHash
         triggerHapticFeedback()
         
         // Brief visual feedback - flash the label

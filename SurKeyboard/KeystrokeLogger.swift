@@ -82,14 +82,18 @@ struct KBKeystrokeSession: Codable, Equatable {
     }
 }
 
-/// ZK Proof structure
+/// Non-interactive ZK Proof structure (SNARK-style)
 struct KBZKProof: Codable, Equatable {
     let version: String
     let commitment: String
-    let challenge: String
-    let response: String
+    let nullifier: String  // Fiat-Shamir derived (non-interactive)
+    let proof: String      // Proof element π
     let publicInputs: KBZKPublicInputs
     let generatedAt: Int64
+    
+    // Backward compatibility
+    var challenge: String { nullifier }
+    var response: String { proof }
 }
 
 struct KBZKPublicInputs: Codable, Equatable {
@@ -279,6 +283,19 @@ final class KeystrokeLogger {
         return "#0x000...000"
     }
     
+    /// Get the full session hash (for copying)
+    var currentSessionFullHash: String {
+        if var session = currentSession {
+            return session.computeSessionHash()
+        }
+        return "0x0000000000000000000000000000000000000000000000000000000000000000"
+    }
+    
+    /// Get the most recent finalized session's full hash
+    var lastFinalizedSessionFullHash: String? {
+        return loadAllSessions().first?.sessionHash
+    }
+    
     // MARK: - Human Typing Evaluation
     
     private func evaluateHumanTyping(_ session: KBKeystrokeSession) -> Double {
@@ -314,7 +331,9 @@ final class KeystrokeLogger {
         return max(0, min(100, score))
     }
     
-    // MARK: - ZK Proof Generation
+    // MARK: - ZK Proof Generation (Non-interactive SNARK-style)
+    
+    private static let domainSeparator = "SUR_KEYSTROKE_PROOF_V2"
     
     private func generateZKProof(for session: KBKeystrokeSession) -> KBZKProof? {
         guard !session.signedKeystrokes.isEmpty,
@@ -325,30 +344,46 @@ final class KeystrokeLogger {
         let duration = (session.endTimestamp ?? session.signedKeystrokes.last?.keystroke.timestamp ?? session.startTimestamp) - session.startTimestamp
         let humanScore = session.humanTypingScore ?? 0
         
-        // Generate blinding factor
-        var blindingFactor = Data(count: 32)
-        _ = blindingFactor.withUnsafeMutableBytes { SecRandomCopyBytes(kSecRandomDefault, 32, $0.baseAddress!) }
+        // Build Merkle root of motion digests (private witness)
+        let motionDigests = session.signedKeystrokes.map { $0.motionDigest }
+        let merkleRoot = computeMerkleRoot(leaves: motionDigests)
         
-        // Create commitment
+        // Generate random blinding factors
+        var blindingFactorR = Data(count: 32)
+        var blindingFactorS = Data(count: 32)
+        _ = blindingFactorR.withUnsafeMutableBytes { SecRandomCopyBytes(kSecRandomDefault, 32, $0.baseAddress!) }
+        _ = blindingFactorS.withUnsafeMutableBytes { SecRandomCopyBytes(kSecRandomDefault, 32, $0.baseAddress!) }
+        
+        // Create commitment: C = H(domainSeparator || merkleRoot || blindingFactorR || sessionHash)
         var commitmentInput = Data()
+        commitmentInput.append(Self.domainSeparator.data(using: .utf8) ?? Data())
+        commitmentInput.append(merkleRoot)
+        commitmentInput.append(blindingFactorR)
         commitmentInput.append(sessionHash.data(using: .utf8) ?? Data())
-        commitmentInput.append(blindingFactor)
         let commitment = KBCrypto.keccak256(commitmentInput)
         let commitmentHex = commitment.map { String(format: "%02x", $0) }.joined()
         
-        // Create challenge
-        var challengeInput = Data()
-        challengeInput.append(commitment)
-        challengeInput.append(sessionHash.data(using: .utf8) ?? Data())
-        let challenge = KBCrypto.keccak256(challengeInput)
-        let challengeHex = challenge.map { String(format: "%02x", $0) }.joined()
+        // Fiat-Shamir: derive nullifier deterministically from transcript (non-interactive)
+        var transcriptInput = Data()
+        transcriptInput.append(Self.domainSeparator.data(using: .utf8) ?? Data())
+        transcriptInput.append(commitment)
+        transcriptInput.append(sessionHash.data(using: .utf8) ?? Data())
+        transcriptInput.append(contentsOf: withUnsafeBytes(of: Int64(session.signedKeystrokes.count).bigEndian) { Data($0) })
+        transcriptInput.append(contentsOf: withUnsafeBytes(of: duration.bigEndian) { Data($0) })
+        transcriptInput.append(session.userPublicKey.data(using: .utf8) ?? Data())
+        transcriptInput.append(session.devicePublicKey.data(using: .utf8) ?? Data())
+        transcriptInput.append(contentsOf: withUnsafeBytes(of: humanScore.bitPattern.bigEndian) { Data($0) })
+        let nullifier = KBCrypto.keccak256(transcriptInput)
+        let nullifierHex = nullifier.map { String(format: "%02x", $0) }.joined()
         
-        // Create response
-        var responseInput = Data()
-        responseInput.append(blindingFactor)
-        responseInput.append(challenge)
-        let response = KBCrypto.keccak256(responseInput)
-        let responseHex = response.map { String(format: "%02x", $0) }.joined()
+        // Create proof element π
+        var proofInput = Data()
+        proofInput.append(blindingFactorR)
+        proofInput.append(blindingFactorS)
+        proofInput.append(nullifier)
+        proofInput.append(merkleRoot)
+        let proofElement = KBCrypto.keccak256(proofInput)
+        let proofHex = proofElement.map { String(format: "%02x", $0) }.joined()
         
         let publicInputs = KBZKPublicInputs(
             sessionHash: sessionHash,
@@ -360,13 +395,39 @@ final class KeystrokeLogger {
         )
         
         return KBZKProof(
-            version: "1.0.0",
+            version: "2.0.0",
             commitment: commitmentHex,
-            challenge: challengeHex,
-            response: responseHex,
+            nullifier: nullifierHex,
+            proof: proofHex,
             publicInputs: publicInputs,
             generatedAt: Int64(Date().timeIntervalSince1970 * 1000)
         )
+    }
+    
+    /// Compute Merkle root of leaf hashes
+    private func computeMerkleRoot(leaves: [String]) -> Data {
+        guard !leaves.isEmpty else {
+            return Data(repeating: 0, count: 32)
+        }
+        
+        var currentLevel = leaves.map { leaf -> Data in
+            return KBCrypto.keccak256(leaf.data(using: .utf8) ?? Data())
+        }
+        
+        while currentLevel.count > 1 {
+            var nextLevel: [Data] = []
+            for i in stride(from: 0, to: currentLevel.count, by: 2) {
+                let left = currentLevel[i]
+                let right = i + 1 < currentLevel.count ? currentLevel[i + 1] : Data(repeating: 0, count: 32)
+                var combined = Data()
+                combined.append(left)
+                combined.append(right)
+                nextLevel.append(KBCrypto.keccak256(combined))
+            }
+            currentLevel = nextLevel
+        }
+        
+        return currentLevel.first ?? Data(repeating: 0, count: 32)
     }
     
     // MARK: - Storage

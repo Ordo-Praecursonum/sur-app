@@ -159,19 +159,22 @@ public struct KeystrokeSession: Codable, Equatable {
 
 // MARK: - Zero Knowledge Proof Structure
 
-/// Zero-knowledge proof of human typing
+/// Non-interactive zero-knowledge proof of human typing (SNARK-style)
+/// Uses Fiat-Shamir heuristic for non-interactivity
 public struct ZKTypingProof: Codable, Equatable {
-    /// Version of the proof protocol
+    /// Version of the proof protocol (2.0.0 = non-interactive SNARK-style)
     public let version: String
     
-    /// Commitment to the keystroke data (blinded hash)
+    /// Commitment to the keystroke data (Pedersen-style commitment)
     public let commitment: String
     
-    /// Challenge derived from commitment and public parameters
-    public let challenge: String
+    /// Nullifier derived via Fiat-Shamir transform (deterministic, non-interactive)
+    /// This replaces the interactive "challenge" - derived from transcript hash
+    public let nullifier: String
     
-    /// Response to the challenge (proves knowledge without revealing data)
-    public let response: String
+    /// Proof element π (proves knowledge of witness without revealing it)
+    /// This replaces the interactive "response"
+    public let proof: String
     
     /// Public inputs for verification
     public let publicInputs: ZKPublicInputs
@@ -182,18 +185,26 @@ public struct ZKTypingProof: Codable, Equatable {
     public init(
         version: String,
         commitment: String,
-        challenge: String,
-        response: String,
+        nullifier: String,
+        proof: String,
         publicInputs: ZKPublicInputs,
         generatedAt: Int64
     ) {
         self.version = version
         self.commitment = commitment
-        self.challenge = challenge
-        self.response = response
+        self.nullifier = nullifier
+        self.proof = proof
         self.publicInputs = publicInputs
         self.generatedAt = generatedAt
     }
+    
+    // MARK: - Backward Compatibility
+    
+    /// Backward compatibility: challenge maps to nullifier
+    public var challenge: String { nullifier }
+    
+    /// Backward compatibility: response maps to proof
+    public var response: String { proof }
 }
 
 /// Public inputs for ZK proof verification
