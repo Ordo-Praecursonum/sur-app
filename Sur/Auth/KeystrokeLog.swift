@@ -55,7 +55,7 @@ public struct SignedKeystroke: Codable, Equatable {
     /// Signature from device's private key (64 bytes in hex)
     public let deviceSign: String
     
-    /// Hash of combined signatures: hash256(userSign || deviceSign)
+    /// Hash of combined signatures: Keccak-256(userSign || deviceSign)
     public let motionDigest: String
     
     public init(keystroke: Keystroke, userSign: String, deviceSign: String, motionDigest: String) {

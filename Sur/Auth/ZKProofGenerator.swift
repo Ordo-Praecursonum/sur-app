@@ -274,7 +274,10 @@ contract KeystrokeProofVerifier {
         }
         
         // Verify proof timestamp is not too old (within 24 hours)
-        if (proof.generatedAt < block.timestamp - 86400) {
+        // Note: proof.generatedAt is in milliseconds (from Swift), convert to seconds for comparison
+        // This check prevents replay attacks with old proofs
+        uint256 proofTimestampSeconds = proof.generatedAt / 1000;
+        if (proofTimestampSeconds < block.timestamp - 86400) {
             emit ProofRejected(proof.sessionHash, msg.sender, "Proof too old");
             return false;
         }

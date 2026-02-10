@@ -1308,6 +1308,262 @@ struct SurTests {
         print("Result: ✅ Device keys are fully compatible with Ethereum")
         print("=== End Compatibility Test ===")
     }
+    
+    // MARK: - Keystroke Logging Tests
+    
+    @Test func testKeystrokeCreation() async throws {
+        let keystroke = Keystroke(
+            key: "a",
+            timestamp: 1234567890,
+            xCoordinate: 100.0,
+            yCoordinate: 200.0
+        )
+        
+        #expect(keystroke.key == "a")
+        #expect(keystroke.timestamp == 1234567890)
+        #expect(keystroke.xCoordinate == 100.0)
+        #expect(keystroke.yCoordinate == 200.0)
+        
+        // Test serialization
+        let data = keystroke.toData()
+        #expect(!data.isEmpty)
+        
+        // Test hash
+        let hash = keystroke.hash
+        #expect(hash.count == 32) // Keccak-256 produces 32 bytes
+    }
+    
+    @Test func testKeystrokeSigning() async throws {
+        // Create a test private key
+        var privateKey = Data(repeating: 0x01, count: 32)
+        
+        // Generate public key
+        guard let publicKey = Secp256k1.derivePublicKey(from: privateKey) else {
+            throw TestError.publicKeyDerivationFailed
+        }
+        
+        let keystroke = Keystroke(
+            key: "b",
+            timestamp: 1234567890,
+            xCoordinate: 150.0,
+            yCoordinate: 250.0
+        )
+        
+        // Sign the keystroke
+        guard let signedKeystroke = KeystrokeSigner.sign(
+            keystroke: keystroke,
+            userPrivateKey: privateKey,
+            devicePrivateKey: privateKey
+        ) else {
+            throw TestError.signingFailed
+        }
+        
+        #expect(signedKeystroke.keystroke == keystroke)
+        #expect(!signedKeystroke.userSign.isEmpty)
+        #expect(!signedKeystroke.deviceSign.isEmpty)
+        #expect(!signedKeystroke.motionDigest.isEmpty)
+        
+        // Verify the signature
+        let isValid = KeystrokeSigner.verify(
+            signedKeystroke: signedKeystroke,
+            userPublicKey: publicKey,
+            devicePublicKey: publicKey
+        )
+        #expect(isValid, "Signed keystroke should verify correctly")
+    }
+    
+    @Test func testKeystrokeSessionHash() async throws {
+        var session = KeystrokeSession(
+            sessionId: "test-session-123",
+            startTimestamp: 1000,
+            userPublicKey: "test-user-pubkey",
+            devicePublicKey: "test-device-pubkey"
+        )
+        
+        // Add some keystrokes
+        let keystroke1 = SignedKeystroke(
+            keystroke: Keystroke(key: "h", timestamp: 1001, xCoordinate: 100, yCoordinate: 100),
+            userSign: "sig1",
+            deviceSign: "sig1",
+            motionDigest: "digest1"
+        )
+        let keystroke2 = SignedKeystroke(
+            keystroke: Keystroke(key: "i", timestamp: 1002, xCoordinate: 110, yCoordinate: 100),
+            userSign: "sig2",
+            deviceSign: "sig2",
+            motionDigest: "digest2"
+        )
+        
+        session.signedKeystrokes.append(keystroke1)
+        session.signedKeystrokes.append(keystroke2)
+        
+        // Compute hash
+        let hash = session.computeSessionHash()
+        
+        #expect(!hash.isEmpty)
+        #expect(hash.hasPrefix("0x"))
+        #expect(session.sessionHash == hash)
+        
+        // Test short hash
+        let shortHash = session.shortHash
+        #expect(shortHash.hasPrefix("#"))
+        #expect(shortHash.contains("..."))
+    }
+    
+    @Test func testHumanTypingEvaluator() async throws {
+        // Create a realistic typing session
+        var session = KeystrokeSession(
+            sessionId: "human-typing-test",
+            startTimestamp: 1000,
+            userPublicKey: "test-user",
+            devicePublicKey: "test-device"
+        )
+        
+        // Add keystrokes with realistic human timing (100-300ms between keys)
+        let baseTime: Int64 = 1000
+        let intervals = [0, 120, 250, 180, 220, 150, 300, 200, 175, 225]
+        var currentTime = baseTime
+        
+        for (i, interval) in intervals.enumerated() {
+            currentTime += Int64(interval)
+            let keystroke = SignedKeystroke(
+                keystroke: Keystroke(
+                    key: String(Character(UnicodeScalar(97 + i)!)), // a, b, c, ...
+                    timestamp: currentTime,
+                    xCoordinate: Double(100 + i * 10),
+                    yCoordinate: 200
+                ),
+                userSign: "sig\(i)",
+                deviceSign: "sig\(i)",
+                motionDigest: "digest\(i)"
+            )
+            session.signedKeystrokes.append(keystroke)
+        }
+        
+        // Evaluate
+        let score = HumanTypingEvaluator.evaluate(session: session)
+        
+        #expect(score >= 0)
+        #expect(score <= 100)
+        
+        // Human-like typing should get a high score
+        #expect(score >= 60, "Realistic human typing should score at least 60%")
+        
+        // Test detailed analysis
+        let analysis = HumanTypingEvaluator.evaluateDetailed(session: session)
+        #expect(analysis.keystrokeCount == intervals.count)
+        #expect(analysis.averageInterKeyInterval > 0)
+    }
+    
+    @Test func testHumanTypingEvaluatorBotDetection() async throws {
+        // Create a bot-like typing session (very fast, consistent timing)
+        var session = KeystrokeSession(
+            sessionId: "bot-typing-test",
+            startTimestamp: 1000,
+            userPublicKey: "test-user",
+            devicePublicKey: "test-device"
+        )
+        
+        // Add keystrokes with bot-like timing (10ms between each key, no variation)
+        for i in 0..<20 {
+            let keystroke = SignedKeystroke(
+                keystroke: Keystroke(
+                    key: "a",
+                    timestamp: 1000 + Int64(i * 10), // 10ms intervals
+                    xCoordinate: 100, // Same position
+                    yCoordinate: 200
+                ),
+                userSign: "sig\(i)",
+                deviceSign: "sig\(i)",
+                motionDigest: "digest\(i)"
+            )
+            session.signedKeystrokes.append(keystroke)
+        }
+        
+        // Evaluate
+        let score = HumanTypingEvaluator.evaluate(session: session)
+        
+        // Bot-like typing should get a low score
+        #expect(score < 80, "Bot-like typing should score less than 80%")
+    }
+    
+    @Test func testZKProofGeneration() async throws {
+        var session = KeystrokeSession(
+            sessionId: "zk-proof-test",
+            startTimestamp: 1000,
+            userPublicKey: "0x1234567890abcdef1234567890abcdef12345678",
+            devicePublicKey: "0xabcdef1234567890abcdef1234567890abcdef12"
+        )
+        
+        // Add keystrokes
+        for i in 0..<5 {
+            let keystroke = SignedKeystroke(
+                keystroke: Keystroke(
+                    key: "t",
+                    timestamp: 1000 + Int64(i * 200),
+                    xCoordinate: Double(100 + i * 10),
+                    yCoordinate: 200
+                ),
+                userSign: "sig\(i)",
+                deviceSign: "sig\(i)",
+                motionDigest: "digest\(i)"
+            )
+            session.signedKeystrokes.append(keystroke)
+        }
+        
+        // Finalize session
+        session.endTimestamp = 1900
+        _ = session.computeSessionHash()
+        session.humanTypingScore = HumanTypingEvaluator.evaluate(session: session)
+        
+        // Generate ZK proof
+        guard let proof = ZKProofGenerator.generateProof(for: session) else {
+            throw TestError.signingFailed
+        }
+        
+        #expect(proof.version == "1.0.0")
+        #expect(!proof.commitment.isEmpty)
+        #expect(!proof.challenge.isEmpty)
+        #expect(!proof.response.isEmpty)
+        #expect(proof.publicInputs.sessionHash == session.sessionHash)
+        #expect(proof.publicInputs.keystrokeCount == 5)
+        
+        // Verify the proof
+        let isValid = ZKProofGenerator.verifyProof(proof, session: session)
+        #expect(isValid, "Generated ZK proof should be valid")
+    }
+    
+    @Test func testZKProofVerification() async throws {
+        // Test that invalid proofs fail verification
+        let invalidProof = ZKTypingProof(
+            version: "1.0.0",
+            commitment: "abc123",
+            challenge: "def456", // Invalid challenge
+            response: "ghi789",
+            publicInputs: ZKPublicInputs(
+                sessionHash: "0x1234",
+                keystrokeCount: 5,
+                typingDuration: 1000,
+                userPublicKey: "pubkey1",
+                devicePublicKey: "pubkey2",
+                humanTypingScore: 85.0
+            ),
+            generatedAt: Int64(Date().timeIntervalSince1970 * 1000)
+        )
+        
+        let isValid = ZKProofGenerator.verifyProof(invalidProof)
+        #expect(!isValid, "Invalid proof should not verify")
+    }
+    
+    @Test func testSolidityVerifierGeneration() async throws {
+        let solidityCode = ZKProofGenerator.generateSolidityVerifier()
+        
+        #expect(!solidityCode.isEmpty)
+        #expect(solidityCode.contains("contract KeystrokeProofVerifier"))
+        #expect(solidityCode.contains("function verifyProof"))
+        #expect(solidityCode.contains("event ProofVerified"))
+        #expect(solidityCode.contains("mapping(bytes32 => bool) public verifiedProofs"))
+    }
 }
 
 // MARK: - Test Helpers
