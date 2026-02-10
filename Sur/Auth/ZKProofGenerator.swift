@@ -297,16 +297,17 @@ contract KeystrokeProofVerifier {
     
     // Non-interactive proof structure (SNARK-style)
     struct SNARKProof {
-        bytes32 commitment;      // Pedersen-style commitment to witness
-        bytes32 nullifier;       // Fiat-Shamir derived (non-interactive)
-        bytes32 proof;           // Proof element π
-        bytes32 sessionHash;     // Public input: session hash
-        uint256 keystrokeCount;  // Public input: number of keystrokes
-        uint256 typingDuration;  // Public input: duration in milliseconds
-        bytes userPublicKey;     // Public input: user's public key
-        bytes devicePublicKey;   // Public input: device's public key
-        uint256 humanTypingScore; // Public input: human typing score (0-100)
-        uint256 generatedAt;     // Timestamp in milliseconds
+        bytes32 commitment;         // Pedersen-style commitment to witness
+        bytes32 nullifier;          // Fiat-Shamir derived (non-interactive)
+        bytes32 proof;              // Proof element π
+        bytes32 sessionHash;        // Public input: session hash
+        uint256 keystrokeCount;     // Public input: number of keystrokes
+        uint256 typingDuration;     // Public input: duration in milliseconds
+        bytes userPublicKey;        // Public input: user's public key
+        bytes devicePublicKey;      // Public input: device's public key
+        uint256 humanTypingScore;   // Public input: human typing score (0-100)
+        bytes8 humanTypingScoreBits; // IEEE 754 double bit pattern (for nullifier verification)
+        uint256 generatedAt;        // Timestamp in milliseconds
     }
     
     // Mapping of verified proofs (nullifier => verified)
@@ -351,7 +352,7 @@ contract KeystrokeProofVerifier {
             proof.typingDuration,
             proof.userPublicKey,
             proof.devicePublicKey,
-            proof.humanTypingScore
+            proof.humanTypingScoreBits
         );
         
         if (expectedNullifier != proof.nullifier) {
@@ -389,6 +390,9 @@ contract KeystrokeProofVerifier {
      * @dev Compute the expected nullifier using Fiat-Shamir transform
      * This is the core of non-interactive verification - the nullifier is
      * deterministically derived from the transcript, no interaction needed
+     *
+     * @param humanTypingScoreBits The IEEE 754 double-precision bit pattern of the score
+     *        (big-endian, as produced by Swift's Double.bitPattern.bigEndian)
      */
     function computeNullifier(
         bytes32 commitment,
@@ -397,12 +401,8 @@ contract KeystrokeProofVerifier {
         uint256 typingDuration,
         bytes calldata userPublicKey,
         bytes calldata devicePublicKey,
-        uint256 humanTypingScore
+        bytes8 humanTypingScoreBits
     ) public pure returns (bytes32) {
-        // Convert humanTypingScore to bytes8 (double precision IEEE 754)
-        // Note: In production, ensure this matches Swift's Double.bitPattern
-        bytes8 scoreBytes = bytes8(uint64(humanTypingScore * 1e18)); // Scale for precision
-        
         return keccak256(abi.encodePacked(
             DOMAIN_SEPARATOR,
             commitment,
@@ -411,7 +411,7 @@ contract KeystrokeProofVerifier {
             typingDuration,
             userPublicKey,
             devicePublicKey,
-            scoreBytes
+            humanTypingScoreBits
         ));
     }
     
@@ -471,6 +471,7 @@ interface IKeystrokeProofVerifier {
         bytes userPublicKey;
         bytes devicePublicKey;
         uint256 humanTypingScore;
+        bytes8 humanTypingScoreBits;
         uint256 generatedAt;
     }
     
