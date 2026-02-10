@@ -84,6 +84,9 @@ final class AuthenticationManager: ObservableObject {
     private let biometricAuth = BiometricAuthManager.shared
     private let deviceIDManager = DeviceIDManager.shared
     
+    /// Shared app group identifier for keyboard extension access
+    private let sharedSuiteName = "group.com.ordo.sure.Sur"
+    
     // MARK: - Singleton
     
     /// Shared instance
@@ -138,6 +141,9 @@ final class AuthenticationManager: ObservableObject {
             let (devicePrivateKey, devicePublicKey) = try deviceIDManager.generateDeviceKeys(from: privateKey)
             deviceIDManager.saveDeviceKeys(privateKey: devicePrivateKey, publicKey: devicePublicKey)
             
+            // Save user public key for keyboard extension
+            saveUserPublicKeyForKeyboard(privateKey)
+            
             // Store securely
             try secureStorage.saveMnemonic(mnemonic, requireBiometric: useBiometric)
             try secureStorage.savePrivateKey(privateKey, requireBiometric: useBiometric)
@@ -191,6 +197,9 @@ final class AuthenticationManager: ObservableObject {
             // Generate device cryptographic keys from user private key
             let (devicePrivateKey, devicePublicKey) = try deviceIDManager.generateDeviceKeys(from: privateKey)
             deviceIDManager.saveDeviceKeys(privateKey: devicePrivateKey, publicKey: devicePublicKey)
+            
+            // Save user public key for keyboard extension
+            saveUserPublicKeyForKeyboard(privateKey)
             
             // Store securely
             try secureStorage.saveMnemonic(mnemonic, requireBiometric: useBiometric)
@@ -402,6 +411,23 @@ final class AuthenticationManager: ObservableObject {
         if let publicKey = deviceIDManager.getStoredDevicePublicKey() {
             devicePublicKey = publicKey
             shortDevicePublicKey = DeviceIDManager.shortenDevicePublicKey(publicKey)
+        }
+    }
+    
+    /// Save user public key to shared UserDefaults for keyboard extension access
+    /// - Parameter privateKey: User's private key (32 bytes)
+    private func saveUserPublicKeyForKeyboard(_ privateKey: Data) {
+        // Derive the user public key from the private key
+        guard let publicKey = Secp256k1.derivePublicKey(from: privateKey) else {
+            return
+        }
+        
+        // Convert to hex string
+        let publicKeyHex = publicKey.map { String(format: "%02x", $0) }.joined()
+        
+        // Save to shared UserDefaults for keyboard extension
+        if let sharedDefaults = UserDefaults(suiteName: sharedSuiteName) {
+            sharedDefaults.set(publicKeyHex, forKey: "user.publicKey")
         }
     }
 }

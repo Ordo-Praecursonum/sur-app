@@ -271,7 +271,11 @@ struct SessionDetailView: View {
                     
                     if session.zkProof != nil {
                         Button(action: copyZKProof) {
-                            Label("Copy ZK Proof", systemImage: "checkmark.shield")
+                            Label("Copy ZK Proof (JSON)", systemImage: "checkmark.shield")
+                        }
+                        
+                        Button(action: copyRemixFormat) {
+                            Label("Copy for Remix IDE", systemImage: "terminal")
                         }
                     }
                 }
@@ -349,6 +353,13 @@ struct SessionDetailView: View {
                 UIPasteboard.general.string = json
                 showCopiedToast()
             }
+        }
+    }
+    
+    private func copyRemixFormat() {
+        if let proof = session.zkProof {
+            UIPasteboard.general.string = proof.toDetailedRemixFormat()
+            showCopiedToast()
         }
     }
     

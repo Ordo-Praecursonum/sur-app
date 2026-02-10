@@ -205,6 +205,62 @@ public struct ZKTypingProof: Codable, Equatable {
     
     /// Backward compatibility: response maps to proof
     public var response: String { proof }
+    
+    // MARK: - Remix/Solidity Format
+    
+    /// Generate the proof formatted for Remix IDE tuple input
+    /// This creates a format that can be directly pasted into Remix's verifyProof function
+    public func toRemixFormat() -> String {
+        // Ensure commitment has 0x prefix and is 32 bytes (64 hex chars)
+        let commitmentHex = commitment.hasPrefix("0x") ? commitment : "0x" + commitment
+        let nullifierHex = nullifier.hasPrefix("0x") ? nullifier : "0x" + nullifier
+        let proofHex = proof.hasPrefix("0x") ? proof : "0x" + proof
+        let sessionHashHex = publicInputs.sessionHash.hasPrefix("0x") ? publicInputs.sessionHash : "0x" + publicInputs.sessionHash
+        
+        // Convert public keys to hex bytes (add 0x if needed)
+        let userPubKeyHex = publicInputs.userPublicKey.hasPrefix("0x") ? publicInputs.userPublicKey : "0x" + publicInputs.userPublicKey
+        let devicePubKeyHex = publicInputs.devicePublicKey.hasPrefix("0x") ? publicInputs.devicePublicKey : "0x" + publicInputs.devicePublicKey
+        
+        // IEEE 754 double bit pattern for humanTypingScore (big-endian)
+        let scoreBits = publicInputs.humanTypingScore.bitPattern.bigEndian
+        let scoreBitsHex = String(format: "0x%016llx", scoreBits)
+        
+        // Remix expects: [commitment, nullifier, proof, sessionHash, keystrokeCount, typingDuration, userPublicKey, devicePublicKey, humanTypingScore, humanTypingScoreBits, generatedAt]
+        return """
+        ["\(commitmentHex)", "\(nullifierHex)", "\(proofHex)", "\(sessionHashHex)", \(publicInputs.keystrokeCount), \(publicInputs.typingDuration), "\(userPubKeyHex)", "\(devicePubKeyHex)", \(Int(publicInputs.humanTypingScore)), "\(scoreBitsHex)", \(generatedAt)]
+        """
+    }
+    
+    /// Generate the proof as a detailed formatted string showing all fields
+    public func toDetailedRemixFormat() -> String {
+        let commitmentHex = commitment.hasPrefix("0x") ? commitment : "0x" + commitment
+        let nullifierHex = nullifier.hasPrefix("0x") ? nullifier : "0x" + nullifier
+        let proofHex = proof.hasPrefix("0x") ? proof : "0x" + proof
+        let sessionHashHex = publicInputs.sessionHash.hasPrefix("0x") ? publicInputs.sessionHash : "0x" + publicInputs.sessionHash
+        let userPubKeyHex = publicInputs.userPublicKey.hasPrefix("0x") ? publicInputs.userPublicKey : "0x" + publicInputs.userPublicKey
+        let devicePubKeyHex = publicInputs.devicePublicKey.hasPrefix("0x") ? publicInputs.devicePublicKey : "0x" + publicInputs.devicePublicKey
+        let scoreBits = publicInputs.humanTypingScore.bitPattern.bigEndian
+        let scoreBitsHex = String(format: "0x%016llx", scoreBits)
+        
+        return """
+        // Remix Input Format for verifyProof(SNARKProof)
+        // Paste this entire tuple into Remix:
+        
+        [
+          "\(commitmentHex)",           // commitment (bytes32)
+          "\(nullifierHex)",            // nullifier (bytes32)
+          "\(proofHex)",                // proof (bytes32)
+          "\(sessionHashHex)",          // sessionHash (bytes32)
+          \(publicInputs.keystrokeCount),                           // keystrokeCount (uint256)
+          \(publicInputs.typingDuration),                           // typingDuration (uint256)
+          "\(userPubKeyHex)",           // userPublicKey (bytes)
+          "\(devicePubKeyHex)",         // devicePublicKey (bytes)
+          \(Int(publicInputs.humanTypingScore)),                    // humanTypingScore (uint256)
+          "\(scoreBitsHex)",            // humanTypingScoreBits (bytes8)
+          \(generatedAt)                // generatedAt (uint256)
+        ]
+        """
+    }
 }
 
 /// Public inputs for ZK proof verification
