@@ -59,6 +59,9 @@ final class DeviceIDManager {
     /// UserDefaults key for device public key
     private static let devicePublicKeyKey = "device.publicKey"
     
+    /// Shared app group identifier for keyboard extension access
+    private static let sharedSuiteName = "group.com.ordo.sure.Sur"
+    
     // MARK: - Singleton
     
     static let shared = DeviceIDManager()
@@ -141,6 +144,12 @@ final class DeviceIDManager {
         // For now, storing in UserDefaults as hex string
         UserDefaults.standard.set(privateKeyHex, forKey: Self.devicePrivateKeyKey)
         UserDefaults.standard.set(publicKeyHex, forKey: Self.devicePublicKeyKey)
+        
+        // Also save to shared UserDefaults for keyboard extension access
+        if let sharedDefaults = UserDefaults(suiteName: Self.sharedSuiteName) {
+            sharedDefaults.set(privateKeyHex, forKey: Self.devicePrivateKeyKey)
+            sharedDefaults.set(publicKeyHex, forKey: Self.devicePublicKeyKey)
+        }
     }
     
     /// Get stored device public key

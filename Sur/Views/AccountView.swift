@@ -176,6 +176,19 @@ struct AccountView: View {
                     Text("App Settings")
                 }
                 
+                // Data Provenance Section
+                Section {
+                    NavigationLink {
+                        KeystrokeLogsView()
+                    } label: {
+                        Label("Keystroke Logs", systemImage: "list.bullet.rectangle")
+                    }
+                } header: {
+                    Text("Data Provenance")
+                } footer: {
+                    Text("View your keystroke logs with cryptographic proofs that verify human-generated content.")
+                }
+                
                 // About Section
                 Section {
                     HStack {

@@ -93,6 +93,17 @@ struct ContentView: View {
                     Text("Test Keyboard")
                 }
                 
+                // MARK: - Keystroke Logs Section
+                Section {
+                    NavigationLink(destination: KeystrokeLogsView()) {
+                        Label("Keystroke Logs", systemImage: "list.bullet.rectangle")
+                    }
+                } header: {
+                    Text("Data Provenance")
+                } footer: {
+                    Text("View your keystroke logs with cryptographic proofs that verify human-generated content.")
+                }
+                
                 // MARK: - About Section
                 Section {
                     HStack {
