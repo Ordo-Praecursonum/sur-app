@@ -1,96 +1,124 @@
-# Sur Protocol — Critical Tasks
+# Sur Protocol iOS — Critical Tasks
 
-> **These 6 tasks must be complete before any external-facing integration, public documentation, or user-facing launch.**
-> None are negotiable — they are gaps between the documented security model and what currently ships.
+> **These 5 tasks must be complete before any external-facing launch of the mobile wallet.**
+> They are gaps between the documented security model and what currently ships in this iOS app.
+> L1 contract implementation and Cosmos chain implementation are **separate projects** — see `PROJECT_SCOPE.md`.
 > See `tasks/REVIEW.md` for the full team discussion that produced these findings.
 
 ---
 
-## TASK-1: Replace ZK "Proof" with Real gnark Groth16 over BN254
+## TASK-1: Replace ZK "Proof" with Real gnark Groth16 over BN254 (iOS FFI)
 
-**Owner:** Dmitri Vasiliev
+**Owner:** Dmitri Vasiliev (circuit + FFI), Lena Kovacs (Swift integration)
 **Reviewer:** Dr. Amara Diallo, Marcus Webb
 **Priority:** CRITICAL
 **Complexity:** XL
-**Blocked by:** TASK-2 (Poseidon must be ready for the circuit to use it)
-**Blocks:** TASK-11 (surcorelibs gets populated)
+**Blocked by:** TASK-2 (Poseidon must be ready — circuit uses it)
+**Blocks:** TASK-7 (surcorelibs gets populated with the real circuit)
 **Spec reference:** `project-scoping/docs/PROOF_FORMAT.md §1.1`, `project-scoping/docs/ZK_CIRCUIT.md`
 
 ### Problem Statement
 
-`Sur/Auth/ZKProofGenerator.swift` is named after a zero-knowledge proof system but implements a Keccak-256 hash chain. It has no zero-knowledge property: a verifier who knows the inputs (or can guess them) can recompute every value — commitment, nullifier, and proof element — without any secret witness. The "proof" is 32 bytes (a Keccak hash), not 256 bytes (two G1 points and one G2 point on BN254 as specified in `PROOF_FORMAT.md §1.1`). There is no pairing computation, no trusted setup, and no R1CS circuit. The entire file must be replaced with a CGo FFI call to a real gnark Groth16 circuit.
+`Sur/Auth/ZKProofGenerator.swift` implements a Keccak-256 hash chain and calls it a "SNARK-style non-interactive proof." It has no zero-knowledge property: a verifier who knows the inputs can recompute every value — commitment, nullifier, and proof element — without any secret witness. The output is 32 bytes (a Keccak hash); the specification requires 256 bytes (two G1 points and one G2 point on BN254).
 
-The documented architecture calls for:
-- A gnark Groth16 circuit (`surcorelibs/gnark/attestation_circuit.go`) that proves in zero-knowledge: device commitment Merkle inclusion, nullifier correctness, Secure Enclave signature validity, behavioral statistics in human range
-- A `ProveAttestation(inputJSON string) (proofBytes []byte, err error)` C export callable from Swift
-- The Swift layer (`Sur/Auth/ZKProofGenerator.swift`) becomes a thin FFI call wrapper, not a cryptographic implementation
+The correct architecture: the iOS app calls a `ProveAttestation` function compiled into `surcorelibs/` (a Go static library linked into the app as an XCFramework). That function runs a real gnark Groth16 circuit. The Swift layer becomes a thin FFI wrapper, not a cryptographic implementation.
+
+The proof this app generates is consumed by two external projects:
+- **Sur Chain project**: the Cosmos chain verifies the proof on-chain via an embedded gnark verifying key
+- **L1 Settlement project**: the SP1 batch prover wraps gnark proofs into an SP1 aggregate proof for L1 settlement
+
+The proof format must match what those projects expect: 256-byte gnark Groth16 proof + 5 BN254 public inputs (`username_hash`, `content_hash_lo`, `content_hash_hi`, `nullifier`, `commitment_root`).
 
 ### Files to Modify / Create
 
 | File | Action | Notes |
 |---|---|---|
-| `Sur/Auth/ZKProofGenerator.swift` | **Full replacement** | Replace entire file with FFI call to `ProveAttestation`; remove all Keccak-based "proof" generation |
-| `surcorelibs/gnark/attestation_circuit.go` | **Create** | gnark Groth16 circuit: Merkle inclusion, nullifier (Poseidon), Secure Enclave signature (P-256 emulated), behavioral constraints |
-| `surcorelibs/gnark/ffi_bridge.go` | **Create** | `//export ProveAttestation` C function; `ProverInput` JSON schema; `VerifyAttestation` |
-| `surcorelibs/gnark/circuit_test.go` | **Create** | Property-based tests with random valid/invalid witnesses; benchmark constraint count and proving time |
-| `surcorelibs/Makefile` | **Create** | Builds `libsurcorelibs.a` for `arm64-apple-ios` and `x86_64-apple-ios-simulator` |
+| `Sur/Auth/ZKProofGenerator.swift` | **Full replacement** | Remove all Keccak-based proof construction; replace with FFI call to `ProveAttestation` and result decoding |
+| `surcorelibs/gnark/attestation_circuit.go` | **Create** | gnark Groth16 circuit: Merkle inclusion (Poseidon), nullifier (Poseidon), Secure Enclave P-256 signature (emulated), behavioral constraints |
+| `surcorelibs/gnark/ffi_bridge.go` | **Create** | `//export ProveAttestation` C function; `ProverInput` JSON schema; `VerifyAttestation` for local validation |
+| `surcorelibs/gnark/circuit_test.go` | **Create** | Property-based tests: 100 random valid witnesses pass, 100 random invalid witnesses fail; constraint count + proving time benchmarks |
+| `surcorelibs/Makefile` | **Create** | Builds `libsurcorelibs.a` for `arm64-apple-ios` and `x86_64-apple-ios-simulator`; assembles XCFramework |
 | `Sur.xcodeproj/project.pbxproj` | **Modify** | Add XCFramework build phase for `libsurcorelibs.xcframework` |
+| `SurTests/ZKProofGeneratorTests.swift` | **Create** | Swift unit tests: call `ProveAttestation` via FFI, verify 256-byte output, verify locally with `VerifyAttestation` |
+
+### ProverInput JSON Schema (interface contract with Sur Chain project)
+
+```json
+{
+  "username_hash": "0x...",          // BN254 field element (32 bytes hex)
+  "content_hash_lo": "0x...",        // lower 128 bits of SHA-256 content hash
+  "content_hash_hi": "0x...",        // upper 128 bits
+  "device_pubkey_x": "0x...",        // P-256 x coordinate (two-limb BN254 encoding)
+  "device_pubkey_y": "0x...",        // P-256 y coordinate
+  "session_counter": 42,             // uint64 session counter
+  "blinding_factor": "0x...",        // 32-byte random (private witness)
+  "commitment_root": "0x...",        // Poseidon Merkle root from Sur Chain
+  "merkle_path": ["0x...", ...],     // 8 sibling hashes (private)
+  "merkle_directions": [0, 1, ...],  // 8 direction bits (private)
+  "se_signature_r": "0x...",         // Secure Enclave ECDSA r (two-limb)
+  "se_signature_s": "0x...",         // Secure Enclave ECDSA s (two-limb)
+  "human_score": 74,                 // integer 0–100 (private witness)
+  "iki_values_ms": [120, 95, ...],   // per-keystroke IKI array (private)
+  "keystroke_count": 45              // private witness
+}
+```
 
 ### Acceptance Criteria
 
-- [ ] `ProveAttestation(inputJSON)` callable from Swift via CGo FFI; input JSON matches `ProverInput` schema documented in `ZK_CIRCUIT.md`
-- [ ] Proof output is exactly 256 bytes: `[A_x, A_y, B_x0, B_x1, B_y0, B_y1, C_x, C_y]` (two G1 points, one G2 point, each coordinate 32 bytes)
-- [ ] Proof passes `groth16.Verify(vk, proof, publicWitness)` in Go unit test with the same verifying key used for `Setup`
-- [ ] Proof fails `groth16.Verify` for any tampered input (invalid behavioral stats, wrong device commitment, mismatched nullifier)
-- [ ] `circuit_test.go` passes with property-based tests generating 100 random valid witnesses and 100 random invalid witnesses
-- [ ] Constraint count documented in PR description; proving time measured and within 8 seconds on Apple M-series (proxy for iPhone 15 Pro)
-- [ ] `ZKProofGenerator.swift` contains no Keccak-based proof construction — only FFI call and result decoding
-- [ ] Xcode build succeeds for `arm64-apple-ios` simulator and device targets
-
-### Security Impact (Marcus Webb)
-
-> "Without this task, the system has no zero-knowledge proof. The current Keccak hash chain can be verified by anyone who knows the inputs — there is no witness hidden by the proof. The soundness property — that only a party who knows a valid witness can produce a proof — does not hold. An attacker who can brute-force or guess the behavioral inputs can forge proofs. This is not a theoretical risk; it's a fundamental property that is simply absent."
+- [ ] `ProveAttestation(inputJSON)` callable from Swift via CGo FFI; no crash, no memory leak (verified with Address Sanitizer)
+- [ ] Proof output is exactly 256 bytes: `[A_x(32), A_y(32), B_x0(32), B_x1(32), B_y0(32), B_y1(32), C_x(32), C_y(32)]`
+- [ ] Proof passes `groth16.Verify(vk, proof, publicWitness)` in Go unit test
+- [ ] Proof fails verification for tampered behavioral stats, wrong device commitment, mismatched nullifier
+- [ ] Constraint count and proving time documented in PR; proving time < 8 seconds on Apple M-series hardware
+- [ ] `ZKProofGenerator.swift` contains no Keccak-based proof construction
+- [ ] Xcode build succeeds for device (`arm64-apple-ios`) and simulator targets
 
 ---
 
-## TASK-2: Replace Keccak-256 with Poseidon (BN254) in Circuit and Cross-Platform
+## TASK-2: Replace Keccak-256 with Poseidon (BN254) Across surcorelibs
 
 **Owner:** Dmitri Vasiliev
 **Reviewer:** Dr. Amara Diallo
 **Priority:** CRITICAL
 **Complexity:** L
-**Blocked by:** None (first task in the chain)
-**Blocks:** TASK-1 (circuit uses Poseidon), TASK-5 (L1 contract uses Poseidon), TASK-7 (Cosmos uses Poseidon Merkle)
-**Spec reference:** `project-scoping/docs/ZK_CIRCUIT.md §3`, `project-scoping/docs/PROOF_FORMAT.md §5.2`, `project-scoping/docs/PROOF_FORMAT.md §6.1`
+**Blocked by:** None (first task — execute first)
+**Blocks:** TASK-1 (circuit uses Poseidon), all cross-project proof verification
+**Spec reference:** `project-scoping/docs/ZK_CIRCUIT.md §3`, `project-scoping/docs/PROOF_FORMAT.md §5.2 and §6.1`
 
 ### Problem Statement
 
-The entire proof pipeline — commitment, nullifier, Merkle tree — uses Keccak-256. The specification (`ZK_CIRCUIT.md §3`) requires Poseidon over BN254 for all in-circuit hash operations. The reason is fundamental: Keccak-256 requires approximately 27,000 R1CS constraints per hash call inside a BN254 circuit. Poseidon over BN254 requires approximately 220 constraints. The attestation circuit has multiple hash operations; using Keccak-256 would make proving time impractical on a mobile device (multiple minutes per proof). Poseidon is the correct primitive for ZK-friendly hashing over this field.
+Every hash operation in the proof pipeline — commitment, nullifier, Merkle tree — currently uses Keccak-256. The specification requires Poseidon over BN254 for all in-circuit operations. Keccak-256 requires ~27,000 R1CS constraints per hash call inside a BN254 circuit; Poseidon requires ~220. Using Keccak-256 would make proving impractical on a mobile device (multiple minutes per proof).
 
-Cross-platform consistency is critical: `Poseidon(x, y)` must produce identical output in Go (gnark-crypto), Swift (via FFI), Rust (SP1 program), and Solidity (`PoseidonHasher.sol`). The canonical test vector from `PROOF_FORMAT.md §6.1` is `Poseidon(1, 2) = 0x115cc0f5e7d690413df64c6b9662e9cf2a3617f2743245519e19607a4417189a`.
+Cross-project compatibility is critical: the Poseidon output this app computes must match what the Sur Chain project verifies on-chain and what the L1 Settlement project's `PoseidonHasher.sol` produces. The canonical test vector from `PROOF_FORMAT.md §6.1` is the shared validation anchor:
 
-### Files to Modify / Create
+```
+Poseidon(1, 2) over BN254 = 0x115cc0f5e7d690413df64c6b9662e9cf2a3617f2743245519e19607a4417189a
+```
 
-| File | Action | Notes |
-|---|---|---|
-| `surcorelibs/poseidon/poseidon.go` | **Create** | Go Poseidon implementation using `github.com/consensys/gnark-crypto/ecc/bn254/fr/poseidon`; parameters: rate=2, capacity=1, 8 full rounds, 57 partial rounds, S-box x^5 |
-| `surcorelibs/poseidon/poseidon_test.go` | **Create** | Test vector validation: `Poseidon(1, 2)` == `0x115cc0f5e7d690413df64c6b9662e9cf2a3617f2743245519e19607a4417189a`; 20 canonical input/output pairs |
-| `surcorelibs/poseidon/test_vectors.json` | **Create** | 20 canonical test vectors shared across Go, Rust, Solidity implementations |
-| `Sur/Auth/Keccak256.swift` | **Retain** (narrow scope) | Keep only for content hash (SHA-256 context) and Ethereum address derivation; remove all ZK proof usage |
-| `Contracts/PoseidonHasher.sol` | **Create** | Solidity Poseidon with same round constants as Go; validates against test vectors |
+### Files to Create
+
+| File | Notes |
+|---|---|
+| `surcorelibs/poseidon/poseidon.go` | Go Poseidon via `gnark-crypto/ecc/bn254/fr/poseidon`; rate=2, cap=1, 8 full rounds, 57 partial rounds, S-box x^5 |
+| `surcorelibs/poseidon/poseidon_test.go` | Test vectors: `Poseidon(1,2)` == canonical value; 20 input/output pairs |
+| `surcorelibs/poseidon/test_vectors.json` | Shared test vectors — **send copy to Sur Chain and L1 Settlement projects** for cross-project validation |
+
+`Sur/Auth/Keccak256.swift` is retained for Ethereum address derivation and content hashing only — all ZK proof operations switch to Poseidon via FFI.
+
+### Cross-Project Coordination
+
+The `test_vectors.json` file produced by this task must be shared with:
+- **Sur Chain project** — to validate their Solidity `PoseidonHasher.sol` produces matching output
+- **L1 Settlement project** — to validate their Rust `poseidon_bn254` crate in the SP1 program
+
+Any discrepancy in test vector output is a critical cross-project bug that breaks attestation verification.
 
 ### Acceptance Criteria
 
-- [ ] `surcorelibs/poseidon/poseidon_test.go` passes: `Poseidon(1, 2)` produces `0x115cc0f5e7d690413df64c6b9662e9cf2a3617f2743245519e19607a4417189a`
-- [ ] All 20 test vectors in `test_vectors.json` produce matching output in Go
-- [ ] `PoseidonHasher.sol` produces matching output for all 20 test vectors (Foundry test)
-- [ ] Rust `poseidon_bn254` crate (used in TASK-8 SP1 program) produces matching output for all 20 test vectors
-- [ ] Swift (via FFI after TASK-1) produces matching output for all 20 test vectors
-- [ ] Any discrepancy between implementations is treated as a critical bug and blocks the release
-
-### Notes for Reviewer (Dr. Amara Diallo)
-
-> "Verify that the round constants are derived from `github.com/consensys/gnark-crypto/ecc/bn254/fr/poseidon` — not re-derived independently. Any independent re-derivation risks using a different seed or domain separator, producing different constants. The S-box must be `x^5` (not `x^3` as used in some older Poseidon variants). The MDS matrix for width=3 must match the reference. Cross-check: `Poseidon(0)` over BN254 is `ZERO_LEAF` used for Merkle tree padding — this value must be the same in Go and Solidity."
+- [ ] `Poseidon(1, 2)` in Go produces `0x115cc0f5e7d690413df64c6b9662e9cf2a3617f2743245519e19607a4417189a`
+- [ ] All 20 test vectors pass in Go
+- [ ] `test_vectors.json` created and shared with partner projects for cross-platform validation
+- [ ] `Sur/Auth/Keccak256.swift` no longer used in any ZK proof path; only in Ethereum address/content hash context
 
 ---
 
@@ -100,40 +128,41 @@ Cross-platform consistency is critical: `Poseidon(x, y)` must produce identical 
 **Reviewer:** Marcus Webb
 **Priority:** CRITICAL
 **Complexity:** L
-**Blocked by:** TASK-4 (Keychain storage must be fixed before App Attest key is stored)
+**Blocked by:** TASK-4 (Keychain storage must be correct before App Attest key is stored there)
 **Spec reference:** `project-scoping/docs/KEY_MANAGEMENT.md §2.2`, `project-scoping/docs/IOS_KEYBOARD.md §3`
 
 ### Problem Statement
 
-Device registration in `Sur/Auth/DeviceIDManager.swift` uses `UIDevice.identifierForVendor` passed through `HMAC-SHA256` as the device key. This provides no proof that the key was generated in genuine Apple hardware running an unmodified build of the Sur app. A simulator, emulator, or jailbroken device can produce a valid-looking device key under this scheme.
+`Sur/Auth/DeviceIDManager.swift` uses `UIDevice.current.identifierForVendor` passed through `HMAC-SHA256` as the device "key." This provides no cryptographic proof that the key was generated in genuine Apple hardware. A simulator, emulator, or jailbroken device produces an identical-looking result.
 
-The specification (`KEY_MANAGEMENT.md §2.2`) requires Apple App Attest:
-1. `DCAppAttestService.generateKey()` — creates key in Secure Enclave, returns `keyId`
-2. `attestKey(_:clientDataHash:)` — Apple signs an attestation object proving the key is in genuine Secure Enclave of an unmodified Apple device
-3. The attestation object (CBOR-encoded) is sent to the Cosmos chain as part of `MsgAddDevice`
-4. The Cosmos chain verifies the Apple certificate chain (`device → attestation_cert → Apple App Attest CA 1`)
+The Sur Chain project will verify App Attest objects submitted by this app as part of `MsgAddDevice`. The attestation object must be produced by `DCAppAttestService` — only genuine, unmodified Apple devices on unmodified iOS can produce a valid Apple-signed attestation.
 
 ### Files to Modify / Create
 
 | File | Action | Notes |
 |---|---|---|
-| `Sur/Auth/DeviceIDManager.swift` | **Full replacement** | Remove `UIDevice.identifierForVendor` approach; implement `DCAppAttestService` lifecycle |
-| `Sur/Auth/AppAttestManager.swift` | **Create** | `generateAndAttestKey()`, CBOR decoding of attestation object, `DCError.invalidKey` handling for device restore, certificate chain extraction for Cosmos submission |
-| `Sur/Auth/AppAttestManager+CBOR.swift` | **Create** | CBOR decoding of Apple attestation object: `authData`, `attStmt`, `x5c` chain, AAGUID extraction |
-| `SurTests/AppAttestManagerTests.swift` | **Create** | Unit tests with mock `DCAppAttestService`; test invalidKey recovery flow |
+| `Sur/Auth/DeviceIDManager.swift` | **Full replacement** | Remove `UIDevice.identifierForVendor` + HMAC approach |
+| `Sur/Auth/AppAttestManager.swift` | **Create** | `DCAppAttestService` lifecycle: `generateKey()`, `attestKey(_:clientDataHash:)`, `generateAssertion(_:clientDataHash:)` |
+| `Sur/Auth/AppAttestManager+CBOR.swift` | **Create** | CBOR decoding of Apple attestation object: `authData`, `attStmt`, `x5c` chain extraction |
+| `SurTests/AppAttestManagerTests.swift` | **Create** | Mock `DCAppAttestService`; test `invalidKey` recovery flow |
+
+### What the attestation object is used for
+
+The attestation object bytes are included in `MsgAddDevice` (sent to the Sur Chain project) so that the chain can verify:
+- The device key was generated in Secure Enclave of a genuine Apple device
+- The build was an unmodified, production-signed build of the Sur app
+- The specific app bundle ID matches the registered Sur app
+
+The `clientDataHash` passed to `attestKey` must be `SHA256(MsgAddDevice proto bytes)` — binding the attestation to this specific registration.
 
 ### Acceptance Criteria
 
-- [ ] `DCAppAttestService.generateKey()` → `attestKey(_:clientDataHash:)` lifecycle completes successfully on a real device (simulator cannot complete this flow — App Attest requires genuine hardware)
-- [ ] CBOR decoding of the Apple attestation object succeeds: `authData`, `attStmt`, `x5c` correctly parsed
-- [ ] `DCError.invalidKey` is handled: app offers re-attestation flow without UX disruption (soft error, not crash)
-- [ ] Attestation object bytes are included in `MsgAddDevice` proto message (even if Cosmos chain is not yet deployed — the data structure must be correct)
-- [ ] No `UIDevice.identifierForVendor` or `HMAC-SHA256` device key derivation remains in `DeviceIDManager.swift`
-- [ ] Unit tests pass with mock `DCAppAttestService`
-
-### Notes for Reviewer (Marcus Webb)
-
-> "Verify: (1) the attestation key is stored in Keychain (after TASK-4), not UserDefaults; (2) the `clientDataHash` passed to `attestKey` is the SHA-256 of the `MsgAddDevice` proto message — this binds the attestation to the specific registration message; (3) the AAGUID is not stored on-chain — it reveals device model family, which is unnecessary metadata; (4) the App Attest CA root is pinned, not fetched at runtime. App Attest attestation is one-time — verify that the app does not attempt re-attestation on every launch, only on first registration or after `DCError.invalidKey`."
+- [ ] Full `DCAppAttestService` lifecycle implemented; works on real device (simulator cannot complete attestation)
+- [ ] CBOR attestation object decoded: `authData`, `x5c` chain correctly parsed
+- [ ] `DCError.invalidKey` handled: re-attestation flow offered without crash
+- [ ] `clientDataHash` = `SHA256(MsgAddDevice bytes)` — attestation is bound to the registration message
+- [ ] AAGUID not included in `MsgAddDevice` payload (privacy — reveals device model family)
+- [ ] No `UIDevice.identifierForVendor` or `HMAC-SHA256` device key derivation remains
 
 ---
 
@@ -141,133 +170,56 @@ The specification (`KEY_MANAGEMENT.md §2.2`) requires Apple App Attest:
 
 **Owner:** Lena Kovacs
 **Reviewer:** Marcus Webb
-**Priority:** CRITICAL (P0 — fix this week before any other work)
+**Priority:** CRITICAL — P0, fix immediately before any other work
 **Complexity:** S
-**Blocked by:** None (this is the first fix — independent of all other tasks)
-**Blocks:** TASK-3 (App Attest stores its key in Keychain, which this task establishes)
+**Blocked by:** Nothing — execute first
+**Blocks:** TASK-3 (App Attest uses Keychain correctly only after this is fixed)
 **Spec reference:** `project-scoping/docs/KEY_MANAGEMENT.md §2.2`
 
 ### Problem Statement
 
-`Sur/Auth/DeviceIDManager.swift` stores the device secp256k1 private key in `UserDefaults(suiteName: "group.com.ordo.sure.Sur")`. This is a plaintext property list file readable by any process in the App Group — including the keyboard extension and any other app sharing the group. The comment on line 146 acknowledges this: `// Note: In production, device private key should be stored in Keychain`.
+`Sur/Auth/DeviceIDManager.swift` stores the device secp256k1 private key in `UserDefaults(suiteName: "group.com.ordo.sure.Sur")`. A comment on line 146 acknowledges this: `// Note: In production, device private key should be stored in Keychain`. This is a P0 security vulnerability — the key is a plaintext property list entry readable by any process in the App Group.
 
-This is not a planned debt item — it is a P0 security vulnerability in code that is currently in the repository. Any malicious code with App Group access can read and exfiltrate the private key.
+**Attack (Marcus Webb):**
+Any process in `group.com.ordo.sure.Sur` — including the keyboard extension, or any malicious app sharing the group — reads `UserDefaults.data(forKey: devicePrivateKeyKey)` and gets the 32-byte secp256k1 signing key. The attacker can sign arbitrary keystroke sessions as this device indefinitely. The Sur Chain sees valid-looking attestations from the stolen key.
 
-**Attack scenario (Marcus Webb):**
-A malicious keyboard extension or app sharing `group.com.ordo.sure.Sur` reads `UserDefaults(suiteName: appGroup).data(forKey: devicePrivateKeyKey)`. It gets the raw 32-byte secp256k1 private key. It can now sign arbitrary keystroke sessions as this device indefinitely, generating valid-looking attestations with any behavioral score.
-
-### Files to Modify
-
-| File | Action | Notes |
-|---|---|---|
-| `Sur/Auth/DeviceIDManager.swift` | **Modify** | Replace all `UserDefaults` reads/writes of private key with Keychain operations |
-
-### Required Implementation
+### Required Change
 
 ```swift
-// WRONG — current implementation:
-deviceKeyStore?.set(devicePrivateKey, forKey: devicePrivateKeyKey)
+// REMOVE — current (plaintext UserDefaults):
+UserDefaults(suiteName: appGroup)?.set(devicePrivateKey, forKey: devicePrivateKeyKey)
 
-// CORRECT — required implementation:
-// Store in Keychain with Secure Enclave (or at minimum, Keychain with device-only protection)
-let query: [String: Any] = [
-    kSecClass as String: kSecClassGenericPassword,
-    kSecAttrAccount as String: devicePrivateKeyKey,
-    kSecAttrAccessGroup as String: appGroupKeychainGroup,
-    kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
-    kSecValueData as String: devicePrivateKey
-]
-SecItemAdd(query as CFDictionary, nil)
+// ADD — correct (Keychain with device-only protection):
+SecItemAdd([
+    kSecClass: kSecClassGenericPassword,
+    kSecAttrAccount: devicePrivateKeyKey,
+    kSecAttrAccessGroup: appGroupKeychainGroup,
+    kSecAttrAccessible: kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
+    kSecValueData: devicePrivateKey
+] as CFDictionary, nil)
 ```
 
-For maximum security (spec requirement): use `kSecAttrTokenIDSecureEnclave` so the key never leaves hardware. This requires generating the key directly in Secure Enclave via `SecKeyCreateRandomKey` rather than deriving it via HMAC — see TASK-3 for the full App Attest approach.
+For the final architecture (after TASK-3): generate the key directly in Secure Enclave via `SecKeyCreateRandomKey` with `kSecAttrTokenIDSecureEnclave` — private key material never leaves hardware.
 
 ### Acceptance Criteria
 
-- [ ] `UserDefaults` contains no private key material — verified by inspecting what `UserDefaults(suiteName: appGroup)` contains after key generation
-- [ ] Device private key is stored with at minimum `kSecAttrAccessibleWhenUnlockedThisDeviceOnly` in the Keychain
-- [ ] Keychain item uses `kSecAttrAccessGroup` for App Group sharing (so keyboard extension can access the public key reference for signing operations)
-- [ ] Private key is not accessible after device backup restore (non-migratable)
-- [ ] `SurTests/DeviceIDManagerTests.swift` verifies Keychain storage with mock `SecItem` APIs
-
-### Notes for Reviewer (Marcus Webb)
-
-> "This is the highest-priority fix in this entire document. It can be completed independently of all other tasks and should be done first. After the fix: verify with `grep -r 'UserDefaults' Sur/Auth/DeviceIDManager.swift` that no key material writes remain. Also verify that debug logging does not print the private key bytes — even in debug builds, private key material must not be logged."
+- [ ] `UserDefaults` contains no private key material — verify by inspecting what `UserDefaults(suiteName: appGroup)` contains after key generation
+- [ ] Private key stored in Keychain with `kSecAttrAccessibleWhenUnlockedThisDeviceOnly`
+- [ ] Key not included in iCloud backup (device-only, non-migratable)
+- [ ] Keyboard extension can read the public key reference from Keychain for signing; cannot read private key bytes
+- [ ] `grep -r "UserDefaults" Sur/Auth/DeviceIDManager.swift` returns zero lines writing key material
 
 ---
 
-## TASK-5: Replace L1 Contract Architecture to Match Spec
+## TASK-5: Fix Behavioral Data Privacy — Remove Biometric Stats from Public Inputs
 
-**Owner:** Isabelle Fontaine
-**Reviewer:** Marcus Webb, Dmitri Vasiliev
-**Priority:** CRITICAL
-**Complexity:** XL
-**Blocked by:** TASK-2 (needs Poseidon params for PoseidonHasher.sol)
-**Blocks:** TASK-8 (batch prover submits to AttestationSettlement.sol)
-**Spec reference:** `project-scoping/docs/L1_SETTLEMENT.md`, `project-scoping/docs/PROOF_FORMAT.md §1.2–1.3`
-
-### Problem Statement
-
-The current `Contracts/KeystrokeProofVerifier.sol` implements the wrong architecture on multiple dimensions:
-
-1. **Wrong verification logic**: The contract re-derives the nullifier via `keccak256(...)` and compares it — there is no BN254 pairing check. A real Groth16 verifier performs `Pairing.pairingProd4(A, B, C, vk.IC...)`. Without the pairing check, the contract does not verify a zero-knowledge proof at all.
-
-2. **Wrong contract names**: The spec requires `AttestationSettlement.sol` (for SP1 aggregate proofs) and `AttestationDirect.sol` (for individual gnark Groth16 proofs). `KeystrokeProofVerifier.sol` satisfies neither role.
-
-3. **Wrong public inputs**: The `SNARKProof` struct exposes `keystrokeCount`, `typingDuration`, `humanTypingScore`, `humanTypingScoreBits` — behavioral biometric data that must be private witnesses inside the circuit, not public calldata. The correct public inputs per `PROOF_FORMAT.md §1.3` are: `[username_hash, content_hash_lo, content_hash_hi, nullifier, commitment_root]`.
-
-4. **Missing SP1 integration**: `AttestationSettlement.sol` must call `ISP1Verifier.verifyProof(SP1_PROGRAM_VKEY, publicValues, proofBytes)` for batch epoch proofs. No SP1 integration exists.
-
-### Files to Modify / Create
-
-| File | Action | Notes |
-|---|---|---|
-| `Contracts/KeystrokeProofVerifier.sol` | **Remove** | Replaced entirely; wrong architecture |
-| `Contracts/AttestationVerifier.sol` | **Create** | Auto-generated by `gnark`'s `ExportSolidity()` from the circuit's verifying key; verifies 256-byte Groth16 proof + 5 public inputs |
-| `Contracts/AttestationDirect.sol` | **Create** | Individual gnark proof submission; `submitAttestation(SNARKProof calldata proof)`; nullifier set; calls `AttestationVerifier.verifyProof` |
-| `Contracts/AttestationSettlement.sol` | **Create** | Epoch batch settlement; `submitCheckpoint(epochId, proof, publicValues)`; calls `ISP1Verifier.verifyProof`; stores epoch state roots; permissionless |
-| `Contracts/PoseidonHasher.sol` | **Create** | Deployed Poseidon with same round constants as Go; used for Merkle leaf reconstruction in `verifyAttestation` |
-| `Contracts/test/AttestationDirectTest.t.sol` | **Create** | Foundry tests: submit valid gnark proof, assert nullifier stored; submit duplicate nullifier, assert revert; submit tampered proof, assert revert |
-| `Contracts/test/AttestationSettlementTest.t.sol` | **Create** | Foundry tests: submit valid SP1 proof for epoch 1, assert state root stored; submit epoch 3 before epoch 2, assert sequential enforcement revert |
-| `Contracts/script/Deploy.s.sol` | **Create** | Foundry deployment script; `CREATE2` for deterministic addresses across networks |
-
-### SNARKProof Struct — Correct Definition
-
-```solidity
-// Per PROOF_FORMAT.md §1.2
-struct Groth16Proof {
-    uint256[2] a;       // G1 point A (64 bytes)
-    uint256[2][2] b;    // G2 point B (128 bytes)
-    uint256[2] c;       // G1 point C (64 bytes)
-    // Total: 256 bytes
-}
-
-// Per PROOF_FORMAT.md §1.3 — NO behavioral data
-uint256[5] publicInputs; // [username_hash, content_hash_lo, content_hash_hi, nullifier, commitment_root]
-```
-
-### Acceptance Criteria
-
-- [ ] `AttestationDirect.sol` calls `AttestationVerifier.verifyProof(a, b, c, inputs)` — a real Groth16 pairing check (not keccak re-derivation)
-- [ ] No behavioral statistics (`humanTypingScore`, `keystrokeCount`, `typingDuration`) appear in any Solidity function signature, event, or storage variable
-- [ ] `AttestationSettlement.sol` calls `ISP1Verifier.verifyProof(SP1_PROGRAM_VKEY, publicValues, proofBytes)`
-- [ ] `forge coverage` shows 100% branch coverage on all contracts
-- [ ] `PoseidonHasher.sol` passes test vectors from `surcorelibs/poseidon/test_vectors.json`
-- [ ] Sequential epoch enforcement: submitting epoch N+2 before N+1 reverts with `EpochNotSequential`
-- [ ] Nullifier replay protection: submitting same nullifier twice reverts with `NullifierAlreadyUsed`
-- [ ] No `tx.origin`, no `block.timestamp` for security-critical logic, no `delegatecall`, no `selfdestruct`
-
----
-
-## TASK-6: Fix Behavioral Data Privacy Leak — Remove Behavioral Stats from Public Inputs
-
-**Owner:** Marcus Webb (specification and audit), Dmitri Vasiliev (circuit fix), Isabelle Fontaine (contract fix)
+**Owner:** Marcus Webb (specification), Dmitri Vasiliev (circuit), Lena Kovacs (iOS data model)
 **Reviewer:** Dr. Amara Diallo
 **Priority:** CRITICAL
-**Complexity:** L
-**Blocked by:** TASK-1 (circuit must be real gnark before this can be fixed at the circuit level)
-**Note:** This task co-delivers with TASK-1 and TASK-5 — the circuit design and contract public inputs are fixed together
-**Spec reference:** `project-scoping/docs/PROOF_FORMAT.md §1.3`, `project-scoping/docs/ZK_CIRCUIT.md §5`
+**Complexity:** M
+**Blocked by:** TASK-1 (real gnark circuit needed to move stats to private witnesses)
+**Note:** This co-delivers with TASK-1 — the circuit and iOS data model are redesigned together
+**Spec reference:** `project-scoping/docs/PROOF_FORMAT.md §1.3`
 
 ### Problem Statement
 
@@ -275,51 +227,51 @@ uint256[5] publicInputs; // [username_hash, content_hash_lo, content_hash_hi, nu
 ```swift
 struct ZKPublicInputs: Codable {
     let sessionHash: String
-    let keystrokeCount: Int
-    let typingDuration: Double
+    let keystrokeCount: Int        // behavioral stat — should be PRIVATE
+    let typingDuration: Double     // behavioral stat — should be PRIVATE
     let userPublicKeyHex: String
     let devicePublicKeyHex: String
-    let humanTypingScore: Double
+    let humanTypingScore: Double   // behavioral stat — should be PRIVATE
 }
 ```
 
-And `Contracts/KeystrokeProofVerifier.sol` accepts `humanTypingScore`, `keystrokeCount`, `typingDuration`, and `humanTypingScoreBits` as public calldata, emitting them in `ProofVerified` events.
-
-Per `PROOF_FORMAT.md §1.3`, the public inputs are **exactly**:
+Per `PROOF_FORMAT.md §1.3`, the **only** public inputs are:
 ```
 [username_hash, content_hash_lo, content_hash_hi, nullifier, commitment_root]
 ```
 
-No behavioral statistics appear. The behavioral constraints (WPM range, IKI range, coefficient of variation minimum, pause pattern) are **private witnesses** — they are enforced inside the ZK circuit as constraints that must be satisfied, but the verifier learns only that they were satisfied, not the values. This is the zero-knowledge property.
+Behavioral statistics — `humanTypingScore`, `keystrokeCount`, `typingDuration`, IKI values — are **private witnesses** enforced as constraints inside the gnark circuit. The verifier (and anyone observing the on-chain data) learns only that the constraints were satisfied, not the values themselves.
 
-### Privacy Impact (Dr. Amara Diallo)
+This is the fundamental privacy guarantee of using zero-knowledge proofs. The current struct discards it entirely by publishing these values.
 
-> "Every `ProofVerified` event on-chain currently contains `humanTypingScore`, `keystrokeCount`, and `typingDuration`. Any blockchain indexer can build a per-user biometric profile from this data. Over N attestations, a user's average typing speed, duration patterns, and score distribution become publicly queryable. This is precisely what zero-knowledge proofs are designed to prevent. We have implemented ZK proofs while discarding their primary privacy guarantee."
+**Note on the L1 contract side:** The current `Contracts/KeystrokeProofVerifier.sol` also exposes these values in its `SNARKProof` struct. Fixing that contract is the responsibility of the **L1 Settlement project** — this task covers the iOS app's data model and the gnark circuit's public/private split.
 
 ### Files to Modify
 
 | File | Action | Notes |
 |---|---|---|
-| `Sur/Auth/KeystrokeLog.swift` | **Modify** `ZKPublicInputs` | Replace with `[username_hash, content_hash_lo, content_hash_hi, nullifier, commitment_root]` — remove all behavioral fields |
-| `Sur/Auth/ZKProofGenerator.swift` | **Modify** (after TASK-1) | gnark circuit private witnesses: `humanScore`, `keystrokeCount`, `typingDuration`, IKI array — all private; circuit enforces constraints internally |
-| `Contracts/AttestationDirect.sol` | **Design** (after TASK-5) | Public inputs must be `uint256[5]` with no behavioral data; `ProofVerified` event emits only `nullifier` and `commitment_root` |
+| `Sur/Auth/KeystrokeLog.swift` | **Modify** `ZKPublicInputs` | Replace all fields with exactly `[usernameHash, contentHashLo, contentHashHi, nullifier, commitmentRoot]` |
+| `Sur/Auth/ZKProofGenerator.swift` | **Modify** (after TASK-1) | `humanScore`, `keystrokeCount`, `typingDuration`, IKI array → gnark circuit private witnesses; not sent as public inputs |
+| `Sur/Auth/KeystrokeLogManager.swift` | **Modify** | Remove any code that puts behavioral stats in a public-facing struct or network request |
+
+### What to communicate to partner projects
+
+When this task is complete, notify the Sur Chain project and L1 Settlement project:
+- The public inputs this app sends are now exactly `[username_hash, content_hash_lo, content_hash_hi, nullifier, commitment_root]`
+- Their verifiers must accept exactly 5 public inputs with no behavioral data
+- Any integration that reads `humanTypingScore` or `keystrokeCount` from proof calldata is broken by design
 
 ### Acceptance Criteria
 
-- [ ] `ZKPublicInputs` struct contains exactly `[usernameHash, contentHashLo, contentHashHi, nullifier, commitmentRoot]` — no `humanTypingScore`, `keystrokeCount`, `typingDuration`, `userPublicKeyHex`, `devicePublicKeyHex`
-- [ ] The gnark circuit enforces behavioral constraints as private witnesses: `humanScore >= 50`, IKI range check, timing variation check — all inside the circuit
-- [ ] `ProofVerified` event in Solidity emits only: `address indexed submitter`, `bytes32 indexed nullifier`, `bytes32 commitment_root`, `uint256 timestamp`
-- [ ] No behavioral statistics appear in any Solidity function signature, event, storage variable, or calldata
-- [ ] `grep -r 'humanTypingScore\|keystrokeCount\|typingDuration' Contracts/` returns no matches in public-facing code
-- [ ] Marcus confirms in review: passive observer indexing on-chain data cannot reconstruct behavioral statistics
-
-### Notes for Reviewer (Dr. Amara Diallo)
-
-> "Verify: the circuit constraint `humanScore >= MIN_HUMAN_SCORE` uses the correct threshold (50) from `ZK_CIRCUIT.md`. Verify: the IKI constraints are checked per-keystroke as individual constraints, not aggregated — the circuit should fail for any session where any inter-key interval is outside the 20ms–2000ms range, not just where the mean is outside. Verify: the Poseidon nullifier derivation inside the circuit uses `Poseidon(device_pubkey_x, device_pubkey_y, session_counter)` — not `Poseidon(sessionHash)`, which would create a different unlinkability guarantee."
+- [ ] `ZKPublicInputs` struct has exactly 5 fields: `usernameHash`, `contentHashLo`, `contentHashHi`, `nullifier`, `commitmentRoot`
+- [ ] gnark circuit enforces behavioral constraints internally: `humanScore >= 50`, IKI range [20ms, 2000ms], coefficient of variation [0.15, 1.0]
+- [ ] `grep -r "humanTypingScore\|keystrokeCount\|typingDuration" Sur/Auth/KeystrokeLog.swift` returns no results in public-facing types
+- [ ] Marcus confirms: no behavioral stats flow to any network request or public data structure
+- [ ] Dr. Amara confirms: circuit constraints match threshold values in `ZK_CIRCUIT.md §5`
 
 ---
 
-*All critical tasks reviewed and assigned at quarterly protocol review, 2026-03-27.*
-*Execution must follow Stream A (TASK-2 → TASK-1) before Stream C (TASK-5) and Stream D (TASK-7).*
-*TASK-4 executes immediately — it is independent of all other tasks and is the highest-priority item.*
-*See `tasks/TASKS-HIGH.md` for the next tier of tasks.*
+*All critical tasks reviewed at quarterly protocol review, 2026-03-27.*
+*Execution order: TASK-4 immediately (P0, no deps) → TASK-2 → TASK-1 (with TASK-5) → TASK-3.*
+*L1 contract architecture and Cosmos chain implementation are tracked in their respective project repositories.*
+*See `tasks/TASKS-HIGH.md` for the next tier.*

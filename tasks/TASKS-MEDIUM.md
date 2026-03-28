@@ -1,379 +1,391 @@
-# Sur Protocol — Medium-Priority Tasks
+# Sur Protocol iOS — Medium-Priority Tasks
 
-> These 4 tasks are required before public beta. They are not security regressions (those are in `TASKS-CRITICAL.md`) and do not block Phase 1 architecture work (covered in `TASKS-HIGH.md`). They address operational safety, security documentation, and a known edge case in the freshness mechanism.
+> These 3 tasks are required before public beta. They address CI/CD for the iOS app, formal justification of behavioral thresholds, and the integration documentation that partner projects (Sur Chain, L1 Settlement) depend on to build their verifiers correctly.
 
 ---
 
-## TASK-12: Set Up CI/CD Pipeline
+## TASK-10: iOS CI/CD Pipeline
 
 **Owner:** Priya Sundaram
 **Reviewer:** Sofia Esposito
 **Priority:** MEDIUM
 **Complexity:** M
-**Blocked by:** None (independent — can start now)
+**Blocked by:** None — can start immediately
 **Spec reference:** `project-scoping/agents/devops-engineer.md §CI/CD`
 
 ### Problem Statement
 
-No `.github/workflows/` directory exists. Every code change across all layers (Go circuit, Swift app, Solidity contracts, Rust batch prover) goes directly to the main branch with no automated validation. Once multiple engineers are committing across the full stack, a broken gnark circuit can ship undetected because neither the iOS build nor the Rust prover tests catch it — they live in separate layers with no automated cross-validation.
+No `.github/workflows/` directory exists. Every code change goes directly to the main branch with no automated validation. As the ZK circuit (TASK-1), keyboard signing (TASK-6), and Cosmos client (TASK-8) land, regressions will be invisible without CI. The surcorelibs Go build is especially fragile: a broken Go compile does not surface until someone builds the XCFramework manually.
 
-The risk grows with each task completed: as TASK-1 (gnark), TASK-5 (Solidity), TASK-7 (Cosmos), and TASK-8 (Rust) land, there are four independent build surfaces that can break each other silently without CI.
+This CI/CD pipeline covers **only this repository** (iOS app + surcorelibs). CI/CD for the Sur Chain project and L1 Settlement project are their own responsibility.
 
 ### Files to Create
 
 ```
 .github/
   workflows/
-    ios-build.yml          → Build and test Swift targets (xcodebuild)
-    gnark-circuit.yml      → go test ./surcorelibs/... ; constraint count benchmark
-    solidity-contracts.yml → forge test --match-contract Attestation -vvv ; forge coverage
-    rust-batch-prover.yml  → cargo test (batch_prover) ; cargo prove build (sp1_batch_program)
-    cosmos-chain.yml       → go test ./cosmos/... ; surd binary build
-    integration.yml        → End-to-end test against sur-testnet-1 (on push to main only)
+    ios-build.yml          → xcodebuild: build + unit tests on iOS Simulator
+    surcorelibs.yml        → go test ./surcorelibs/...; make xcframework (verify it compiles)
+    pr-checks.yml          → runs both workflows on every PR; blocks merge on failure
 ```
 
-### Workflow Structure
+### Workflow Definitions
 
 ```yaml
-# ios-build.yml — triggered on every PR touching Sur/ or SurKeyboard/
+# .github/workflows/ios-build.yml
 name: iOS Build & Test
 on:
   push:
-    paths: ['Sur/**', 'SurKeyboard/**', 'SurTests/**']
+    branches: [main]
+    paths: ['Sur/**', 'SurKeyboard/**', 'SurTests/**', 'SurUITests/**']
   pull_request:
-    paths: ['Sur/**', 'SurKeyboard/**', 'SurTests/**']
+    paths: ['Sur/**', 'SurKeyboard/**', 'SurTests/**', 'SurUITests/**']
+
 jobs:
-  build:
+  build-and-test:
     runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
-      - name: Select Xcode
+      - name: Select Xcode 15
         run: sudo xcode-select -s /Applications/Xcode_15.4.app
+      - name: Cache DerivedData
+        uses: actions/cache@v4
+        with:
+          path: ~/Library/Developer/Xcode/DerivedData
+          key: ${{ runner.os }}-deriveddata-${{ hashFiles('Sur.xcodeproj/project.pbxproj') }}
       - name: Build & Test
         run: |
           xcodebuild test \
+            -project Sur.xcodeproj \
             -scheme Sur \
-            -destination 'platform=iOS Simulator,name=iPhone 15 Pro' \
-            -resultBundlePath TestResults.xcresult
-      - name: Upload results
+            -destination 'platform=iOS Simulator,name=iPhone 15 Pro,OS=17.5' \
+            -resultBundlePath TestResults.xcresult \
+            CODE_SIGNING_ALLOWED=NO
+      - name: Upload test results
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: test-results
+          name: TestResults-${{ github.sha }}
           path: TestResults.xcresult
 ```
 
 ```yaml
-# solidity-contracts.yml — triggered on every PR touching Contracts/
-name: Solidity Contract Tests
+# .github/workflows/surcorelibs.yml
+name: surcorelibs Build & Test
 on:
   push:
-    paths: ['Contracts/**']
+    branches: [main]
+    paths: ['surcorelibs/**']
   pull_request:
-    paths: ['Contracts/**']
+    paths: ['surcorelibs/**']
+
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
-      - name: Install Foundry
-        uses: foundry-rs/foundry-toolchain@v1
-      - name: Run tests
-        run: forge test --match-contract Attestation -vvv
-      - name: Coverage gate
-        run: |
-          COVERAGE=$(forge coverage --report summary | grep 'Branch coverage' | awk '{print $3}' | tr -d '%')
-          if (( $(echo "$COVERAGE < 100" | bc -l) )); then
-            echo "Branch coverage $COVERAGE% < 100%"
-            exit 1
-          fi
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          cache-dependency-path: surcorelibs/go.sum
+      - name: Run Go tests
+        run: cd surcorelibs && go test ./... -v -count=1
+      - name: Verify XCFramework builds
+        run: cd surcorelibs && make xcframework
+        # This confirms the CGo FFI compiles for iOS targets
 ```
 
-```yaml
-# mainnet-deploy — manual approval gate (never auto-deploys)
-name: Mainnet Deployment
-on:
-  workflow_dispatch:
-    inputs:
-      network:
-        description: 'Target network (mainnet, base, arbitrum)'
-        required: true
-jobs:
-  deploy:
-    environment: mainnet    # requires 2 approvers in GitHub environment settings
-    runs-on: ubuntu-latest
-    steps:
-      - name: Deploy contracts
-        run: forge script Deploy.s.sol --broadcast --verify --chain-id ${{ env.CHAIN_ID }}
-```
+### Branch Protection Rules (configure in GitHub repository settings)
+
+- `main` branch: require PR; require `iOS Build & Test` and `surcorelibs Build & Test` to pass; no direct pushes
+- Minimum 1 reviewer approval required before merge
+- No force-push to `main`
+
+### Secrets Required (add in GitHub repository Settings → Secrets)
+
+| Secret | Purpose |
+|---|---|
+| — | No secrets needed for build/test; no deployment in this repo |
+
+No deployment pipeline needed — this is a mobile app; releases go through Apple App Store Connect (manual process outside CI).
 
 ### Acceptance Criteria
 
-- [ ] PR to `Sur/` directory triggers `ios-build.yml`; build failure blocks merge
-- [ ] PR to `Contracts/` triggers `solidity-contracts.yml`; `forge coverage` < 100% branch blocks merge
-- [ ] PR to `surcorelibs/` triggers `gnark-circuit.yml`; `go test ./...` failure blocks merge
-- [ ] PR to `sp1_batch_program/` or `batch_prover/` triggers `rust-batch-prover.yml`; `cargo test` failure blocks merge
-- [ ] PR to `cosmos/` triggers `cosmos-chain.yml`; `go test ./...` failure blocks merge
-- [ ] Go module cache and Rust Cargo cache configured with `actions/cache`; build times under 5 minutes for each workflow
-- [ ] Mainnet deployment workflow requires manual dispatch + 2 approvers in GitHub `mainnet` environment; never triggers automatically
-- [ ] No plaintext secrets in workflow files; all credentials in GitHub Secrets with descriptive names (`ETH_DEPLOYER_PRIVATE_KEY`, `ETHERSCAN_API_KEY`, etc.)
-- [ ] `docker/build-push-action` for the batch prover builds `linux/amd64` and `linux/arm64` images
+- [ ] Every PR touching `Sur/` or `SurKeyboard/` runs `xcodebuild test` and blocks merge on failure
+- [ ] Every PR touching `surcorelibs/` runs `go test ./...` and `make xcframework`, blocks merge on failure
+- [ ] DerivedData cached between runs; Go modules cached; build time under 8 minutes per workflow
+- [ ] `main` branch requires PR + CI pass; no direct pushes
+- [ ] Test result bundles uploaded as artifacts on every run (accessible for debugging failures)
 
 ---
 
-## TASK-13: Publish Behavioral Threshold Justification
+## TASK-11: Behavioral Threshold Justification Document
 
 **Owner:** Dr. Amara Diallo
 **Reviewer:** Marcus Webb
 **Priority:** MEDIUM
 **Complexity:** M
-**Blocked by:** None (independent — can start now)
+**Blocked by:** None — can start immediately
 **Spec reference:** `project-scoping/docs/ZK_CIRCUIT.md §5`, `project-scoping/agents/mathematician-researcher.md §behavioral-biometrics-theory`
 
 ### Problem Statement
 
 `Sur/Auth/HumanTypingEvaluator.swift` has hardcoded thresholds:
 ```swift
-// Timing patterns (35%): inter-key intervals 20ms–2000ms
-// Timing variation (25%): coefficient of variation 0.15–1.0
-// Coordinate patterns (20%): normalized jump <= 0.8
-// Typing patterns (20%): pauses, bursts, natural rhythm
+// inter-key intervals: 20ms–2000ms
+// coefficient of variation: 0.15–1.0
+// coordinate jump: normalized <= 0.8
+// minimum human score: 50 / 100
 ```
 
-These values appear without citation, without derivation, and without adversarial analysis. The current `project-scoping/docs/ZK_CIRCUIT.md` does not document the behavioral threshold section with academic references. Without published justification, external auditors and researchers cannot verify that these thresholds:
-- Correctly accept 98%+ of legitimate human typists (false negative rate)
-- Meaningfully reject automated typing tools (true positive rate)
-- Are not gameable by a bot that knows the exact thresholds
+These values appear without citation, without derivation, and without adversarial analysis. External auditors, the Sur Chain project (which governs these thresholds as module parameters), and the L1 Settlement project (which encodes them in circuit constraints) all need a citable, peer-reviewed basis for these values.
 
 ### Deliverable
 
-A new document `project-scoping/docs/BEHAVIORAL_THRESHOLDS.md` (or a fully populated §5 in `ZK_CIRCUIT.md`) containing:
+New file: `project-scoping/docs/BEHAVIORAL_THRESHOLDS.md`
 
-#### Section 1 — Human Typing Performance Data
+#### Section 1 — Human Typing Performance Data (with citations)
 
-| Parameter | Lower Bound | Upper Bound | Source | Sample Size |
-|---|---|---|---|---|
-| WPM (words per minute) | 15 WPM | 216 WPM | [Guinness World Records 2023; Salthouse 1984 corpus] | N > 50,000 |
-| IKI mean (inter-key interval) | 20ms | 2,000ms | [Bergadano et al. 2002; Karnan et al. 2011] | N > 10,000 |
-| IKI coefficient of variation | 0.15 | 1.0 | [Leggett et al. 1991; Revett et al. 2005] | N > 5,000 |
-| Deletion rate | 0% | 35% | [Bergadano et al. 2002 corpus analysis] | N > 10,000 |
-| Pause frequency (>500ms IKI) | 2% | 40% | [Dr. Diallo corpus study, 2024] | N = 50,000 |
+| Parameter | Bound | Value | Source |
+|---|---|---|---|
+| WPM lower | min | 15 WPM | Salthouse (1984), Guinness World Records |
+| WPM upper | max | 216 WPM | Guinness World Records 2023 |
+| IKI lower bound | min | 20ms | Bergadano et al. (2002); Karnan et al. (2011) |
+| IKI upper bound | max | 2,000ms | Leggett et al. (1991) |
+| IKI coefficient of variation lower | min | 0.15 | Revett et al. (2005); Dr. Diallo corpus study (2024) |
+| IKI coefficient of variation upper | max | 1.0 | Dr. Diallo corpus study (2024) — p99.9 |
+| Deletion rate upper | max | 35% | Bergadano et al. (2002) corpus analysis |
+| Pause frequency (IKI > 500ms) | range | 2%–40% | Dr. Diallo corpus study (2024) |
 
-Cite Dr. Diallo's published corpus study: "Human Keystroke Dynamics: Empirical Bounds for Authentication Thresholds."
+Cite: Dr. Diallo, "Human Keystroke Dynamics: Empirical Bounds for Authentication Thresholds" (corpus of 50,000 users).
 
 #### Section 2 — Adversarial Synthesis Analysis
 
-Document the difficulty of synthesizing keystroke data that passes all thresholds simultaneously:
-- GAN-based synthesis (cite published results): can match WPM and mean IKI independently; struggles with IKI coefficient of variation > 0.15 simultaneously with correct WPM
-- LSTM-based synthesis: can approximate individual IKI distributions; generates overly regular patterns (CoV < 0.12) when constrained to a WPM target
-- Physical keyboard automation (AutoHotkey, xdotool): easily detected — deletion rate 0%, no pauses, CoV < 0.05
-- The joint distribution argument: passing all 5 constraints simultaneously increases attack cost by estimated 2–3 orders of magnitude relative to passing any single constraint
+Document the difficulty of synthesizing keystroke data that passes all constraints simultaneously:
 
-#### Section 3 — False Negative Rate Analysis
+- **Physical automation** (AutoHotkey, xdotool): IKI CoV < 0.05; deletion rate 0%; trivially detected
+- **GAN synthesis** (published results — cite): matches WPM and mean IKI independently; IKI CoV > 0.15 while hitting a WPM target has not been demonstrated simultaneously in published literature
+- **LSTM synthesis** (published results — cite): generates overly regular timing (CoV < 0.12) when constrained to WPM range
+- **Joint distribution argument**: any single constraint can be synthesized; the joint distribution over all 5 simultaneously increases adversarial cost by an estimated 2–3 orders of magnitude
 
-With the chosen thresholds, what fraction of legitimate human typists would fail?
-- Lower WPM bound (15 WPM): excludes <0.1% of the adult population (hunt-and-peck typists under physical impairment)
-- IKI CoV lower bound (0.15): excludes typists with motor neuron conditions producing highly regular timing — documented as an accepted tradeoff with mitigation path (accessibility mode)
-- Target false negative rate: < 2% of unimpaired adult typists
+#### Section 3 — False Negative Rate
 
-#### Section 4 — Threshold Values Used in Circuit
+With chosen bounds, what fraction of legitimate human typists fail?
+- Lower WPM (15): excludes < 0.1% of adults (extreme physical impairment)
+- IKI CoV lower bound (0.15): excludes users with motor neuron conditions producing hyper-regular timing — documented as accepted tradeoff; accessibility mode pathway noted
+- Target: < 2% false negative rate for unimpaired adult typists
 
-Exact values implemented in gnark circuit (from `ZK_CIRCUIT.md §5`):
-- `MIN_IKI_MS = 20`
-- `MAX_IKI_MS = 2000`
-- `MIN_IKI_COV = 15` (× 100 for integer representation, i.e., 0.15)
-- `MAX_IKI_COV = 100` (× 100, i.e., 1.0)
-- `MIN_HUMAN_SCORE = 50` (HumanTypingEvaluator composite score)
+#### Section 4 — Exact Values Used in Implementation
 
-Justification for each value linked to Section 1 citations.
+Cross-reference with `Sur/Auth/HumanTypingEvaluator.swift`:
+```
+MIN_IKI_MS = 20
+MAX_IKI_MS = 2000
+MIN_IKI_COV = 0.15
+MAX_IKI_COV = 1.0
+MIN_HUMAN_SCORE = 50
+TIMING_WEIGHT = 0.35
+VARIATION_WEIGHT = 0.25
+COORDINATE_WEIGHT = 0.20
+PATTERN_WEIGHT = 0.20
+```
+
+Note to Sur Chain project: these values are currently hardcoded in the iOS app. They will need to become governance-adjustable parameters in the `x/attestation` module. This document is the justification for their initial values.
 
 ### Acceptance Criteria
 
-- [ ] `project-scoping/docs/BEHAVIORAL_THRESHOLDS.md` (or `ZK_CIRCUIT.md §5`) contains academic citations for every threshold parameter
-- [ ] Dr. Amara Diallo's corpus study cited for IKI distribution data (50,000 participants)
-- [ ] At least one published paper on GAN-based or LSTM-based keystroke synthesis cited in the adversarial analysis
-- [ ] False negative rate for unimpaired adult typists estimated at < 2% based on corpus data
-- [ ] All threshold values in the document match the values in `Sur/Auth/HumanTypingEvaluator.swift` and (after TASK-1/TASK-6) in the gnark circuit constraints
-- [ ] Marcus Webb reviews and confirms adversarial analysis is complete: no known automated tool known to pass all 5 constraints simultaneously at the time of writing
-- [ ] Document available to external auditors as part of the pre-audit package
+- [ ] `project-scoping/docs/BEHAVIORAL_THRESHOLDS.md` created with all 4 sections
+- [ ] Every threshold value has a published citation or Dr. Diallo's corpus study as source
+- [ ] At least one GAN/LSTM synthesis paper cited in adversarial analysis
+- [ ] False negative rate < 2% stated with supporting data
+- [ ] All values match `Sur/Auth/HumanTypingEvaluator.swift` — any discrepancy found during writing triggers an update to the Swift file (doc is the truth)
+- [ ] Marcus confirms: no known automated tool demonstrated passing all 5 constraints simultaneously at time of writing
+- [ ] Document shared with Sur Chain project as input for `x/attestation` module parameter defaults
 
 ---
 
-## TASK-14: Replace Timestamp-Based Freshness with Block-Height Freshness
+## TASK-12: Integration Documentation
 
-**Owner:** Marcus Webb (specification), Arjun Nair (Cosmos implementation), Isabelle Fontaine (L1 update)
-**Reviewer:** Isabelle Fontaine (for Arjun's changes)
+**Owner:** Sofia Esposito (structure and prose), Arjun Nair (Cosmos API contract review), Isabelle Fontaine (L1 ABI review)
+**Reviewer:** Lena Kovacs (iOS implementation perspective)
 **Priority:** MEDIUM
-**Complexity:** S
-**Blocked by:** TASK-7 (Cosmos chain must exist), TASK-5 (L1 contracts must exist)
-**Spec reference:** `project-scoping/docs/L1_SETTLEMENT.md §4.3`
+**Complexity:** M
+**Blocked by:** TASK-3 (App Attest format finalised), TASK-1 (proof format finalised)
+**Note:** Produce a first draft immediately using the specs; update with exact values as TASK-1 and TASK-3 complete
 
 ### Problem Statement
 
-The current `KeystrokeProofVerifier.sol` (to be replaced by TASK-5) uses `block.timestamp` for proof freshness:
-```solidity
-require(block.timestamp - proof.generatedAt <= 24 hours, "Proof too old");
+The Sur Protocol is split across multiple repositories. This iOS app depends on the Sur Chain project and L1 Settlement project for core functionality. Without clear API contracts documented in this repository, those partner projects cannot build verifiers that accept what this app sends. Currently:
+
+- The Sur Chain project does not know exactly what `MsgAddDevice` must contain from the iOS side
+- The L1 Settlement project does not know exactly what proof format (256 bytes, 5 public inputs) they must accept
+- Any engineer picking up this iOS project has no guide for what external services to run locally
+
+### Deliverable: `docs/INTEGRATION.md`
+
+This file is the **integration contract** — the single source of truth for what this iOS app sends to external systems and what it expects back.
+
+#### Chapter 1 — Sur Chain Project Interface
+
+**1.1 gRPC / REST endpoints this app calls**
+
+```
+Base gRPC: grpc.surprotocol.com:9090   (configurable)
+Base REST: https://api.surprotocol.com  (configurable)
+Chain ID: sur-1
+Fee denom: usur
 ```
 
-`block.timestamp` on Ethereum is controlled by the block proposer and can be manipulated within the Ethereum protocol's allowed tolerance (~12 seconds per slot on proof-of-stake Ethereum). More importantly, the 24-hour window approach is fragile: a proof generated just before the window expires, submitted to the Cosmos chain but delayed in the batch prover pipeline, could arrive at L1 stale.
-
-The correct approach: the Cosmos chain records the block height at which a proof was submitted (`proof_submission_height`). The L1 contract trusts the Cosmos-anchored epoch timestamp (included in the SP1 proof's public values) rather than `block.timestamp`. Freshness is enforced at the Cosmos chain level (`MsgSubmitAttestation` rejects proofs older than N blocks at submission time), not re-checked at L1.
-
-### Changes Required
-
-**Cosmos side** (`cosmos/x/attestation/keeper/msg_server.go`):
-```go
-// In MsgSubmitAttestation handler:
-const MAX_PROOF_AGE_BLOCKS = 100  // ~10 minutes at 6s block time
-
-proofBlockHeight := ctx.BlockHeight() // block when proof was generated (from proof public inputs)
-currentHeight := ctx.BlockHeight()
-
-if currentHeight - proofBlockHeight > MAX_PROOF_AGE_BLOCKS {
-    return nil, sdkerrors.Wrapf(ErrProofExpired,
-        "proof generated at height %d, current height %d, max age %d blocks",
-        proofBlockHeight, currentHeight, MAX_PROOF_AGE_BLOCKS)
+**1.2 `MsgRegisterUsername`**
+```protobuf
+message MsgRegisterUsername {
+  string creator = 1;           // bech32 Cosmos address of the user
+  string username = 2;          // 3–32 chars, lowercase alphanumeric + underscore
+  bytes  identity_pubkey = 3;   // 65-byte uncompressed secp256k1 public key
 }
 ```
+Expected response: `MsgRegisterUsernameResponse { username_hash: bytes }`
+Error cases this app handles: `ErrUsernameAlreadyTaken`, `ErrInvalidUsername`, `ErrInsufficientFees`
 
-**L1 side** (`Contracts/AttestationDirect.sol`):
-```solidity
-// Remove: require(block.timestamp - proof.generatedAt <= 24 hours)
-// Add: trust the Cosmos-attested submission timestamp included in proof public values
-// The SP1 aggregate proof in AttestationSettlement.sol already encodes epoch timestamps
-// from the Cosmos chain, which is the authoritative source of temporal ordering
+**1.3 `MsgAddDevice`**
+```protobuf
+message MsgAddDevice {
+  string creator = 1;
+  string username = 2;
+  bytes  device_pubkey = 3;          // 65-byte uncompressed P-256 public key (from Secure Enclave)
+  bytes  app_attest_object = 4;      // CBOR-encoded Apple App Attest attestation object
+  bytes  device_commitment = 5;      // Poseidon(device_pubkey_x, device_pubkey_y, blinding_factor)
+  bytes  client_data_hash = 6;       // SHA-256 of this message's canonical encoding (bound to attestation)
+}
+```
+Expected response: `MsgAddDeviceResponse { commitment_root: bytes, device_index: uint64 }`
+
+**1.4 `MsgSubmitAttestation`**
+```protobuf
+message MsgSubmitAttestation {
+  string creator = 1;
+  string username = 2;
+  bytes  proof = 3;               // 256-byte gnark Groth16 proof (see §1.5)
+  bytes  public_inputs = 4;       // 160-byte public inputs (5 × 32-byte BN254 field elements)
+  uint64 session_counter = 5;     // monotonically increasing per device
+}
+```
+Public inputs layout (from `PROOF_FORMAT.md §1.3`):
+```
+Offset  Size  Field
+0       32    username_hash
+32      32    content_hash_lo   (low 128 bits of SHA-256 content hash)
+64      32    content_hash_hi   (high 128 bits)
+96      32    nullifier         (Poseidon(device_pubkey_x, device_pubkey_y, session_counter))
+128     32    commitment_root   (Poseidon Merkle root of device commitments)
 ```
 
-For `AttestationDirect.sol` (individual proofs without SP1 batch): include `cosmos_submission_height` as one of the public inputs (replacing or supplementing the current `commitment_root`), letting L1 verify freshness against the Cosmos chain's block height rather than EVM timestamp.
+**1.5 Proof format (from `PROOF_FORMAT.md §1.1`)**
 
-### Files to Modify
+The 256-byte gnark Groth16 proof:
+```
+Offset  Size  Field
+0       64    A  (G1 point: x[32] || y[32])
+64      128   B  (G2 point: x0[32] || x1[32] || y0[32] || y1[32])
+192     64    C  (G1 point: x[32] || y[32])
+```
+All coordinates are big-endian 32-byte BN254 field elements.
 
-| File | Action | Notes |
+**1.6 REST query endpoints this app reads**
+```
+GET /sur/identity/v1/user/{username}
+GET /sur/identity/v1/commitment_root/{username}
+GET /sur/identity/v1/merkle_proof/{username}/{device_pubkey_hex}
+GET /sur/attestation/v1/attestations/{username}?limit=20&offset=0
+GET /sur/attestation/v1/attestation/{nullifier_hex}
+```
+
+**1.7 Error codes this app handles**
+
+| Cosmos error code | Sur error | User-facing message |
 |---|---|---|
-| `cosmos/x/attestation/keeper/msg_server.go` | **Modify** | Add `MAX_PROOF_AGE_BLOCKS` check in `MsgSubmitAttestation`; reject proofs where `current_height - proof_height > 100` |
-| `cosmos/x/attestation/types/params.go` | **Modify** | Add `ProofFreshnessBlocks uint64` as a governance-adjustable parameter (default: 100) |
-| `Contracts/AttestationDirect.sol` | **Modify** (after TASK-5) | Remove `block.timestamp` freshness check; document that freshness is enforced on the Cosmos chain |
-| `project-scoping/docs/L1_SETTLEMENT.md` | **Modify** | Update §4.3 to document block-height freshness model |
+| `ErrUsernameAlreadyTaken` | `SurError.usernameUnavailable` | "This username is already taken. Choose a different one." |
+| `ErrDeviceAlreadyRegistered` | `SurError.deviceAlreadyRegistered` | "This device is already registered to this account." |
+| `ErrNullifierAlreadyUsed` | `SurError.proofAlreadySubmitted` | "This proof has already been submitted." |
+| `ErrProofExpired` | `SurError.proofExpired` | "This proof is too old. Generate a new attestation." |
+| `ErrInvalidProof` | `SurError.invalidProof` | "Proof verification failed. Please try again." |
+
+#### Chapter 2 — L1 Settlement Project Interface
+
+**2.1 Contracts this app reads (read-only)**
+
+| Contract | Network | Address | Source |
+|---|---|---|---|
+| `AttestationDirect` | Ethereum mainnet | TBD (from L1 project) | L1 Settlement project |
+| `AttestationDirect` | Ethereum Sepolia | TBD | L1 Settlement project |
+| `AttestationSettlement` | Base mainnet | TBD | L1 Settlement project |
+
+Update `Sur/Network/l1_contracts.json` when the L1 Settlement project deploys.
+
+**2.2 ABI functions this app calls**
+
+```solidity
+// All read-only (eth_call, no signing)
+function isNullifierUsed(bytes32 nullifier) external view returns (bool);
+function getAttestation(bytes32 nullifier) external view returns (AttestationRecord memory);
+function latestSettledEpoch() external view returns (uint256);
+function getCheckpoint(uint256 epochId) external view returns (EpochCheckpoint memory);
+```
+
+**2.3 What the L1 Settlement project must accept from this app**
+
+The gnark Groth16 proof submitted via `MsgSubmitAttestation` (to the Cosmos chain) is eventually batched by the SP1 prover and submitted to `AttestationSettlement.submitCheckpoint`. The L1 contract must verify proofs with:
+- Proof: 256-byte gnark Groth16 (as defined in §1.5)
+- Public inputs: exactly 5 BN254 field elements in the order defined in §1.4
+- No behavioral statistics in any public input
+
+The L1 Settlement project must use the same gnark verifying key as the Cosmos chain. Changes to the gnark circuit (TASK-1) require the L1 Settlement project to update their `AttestationVerifier.sol`.
+
+#### Chapter 3 — Development Setup
+
+**3.1 Running locally**
+
+Prerequisites:
+```bash
+# 1. Clone and start the Sur Chain project locally
+git clone <sur-chain-repo>
+cd sur-chain && make start-local   # starts surd on localhost:9090 and localhost:1317
+
+# 2. Configure this iOS app
+# In Xcode scheme → Run → Environment Variables:
+COSMOS_GRPC=localhost:9090
+COSMOS_REST=http://localhost:1317
+ETH_RPC_URL=https://sepolia.infura.io/v3/<your-key>
+```
+
+**3.2 Testnet endpoints**
+```
+Sur testnet gRPC: grpc.testnet.surprotocol.com:9090
+Sur testnet REST: https://api.testnet.surprotocol.com
+Ethereum Sepolia: https://rpc.ankr.com/eth_sepolia
+```
+
+**3.3 Proof format compatibility test**
+
+Before any release, run the cross-project compatibility test:
+1. Generate a gnark Groth16 proof using `surcorelibs/gnark/circuit_test.go`
+2. Submit it to the local Sur Chain node via `MsgSubmitAttestation`
+3. Verify the chain accepts it (non-zero receipt, no `ErrInvalidProof`)
+4. Share the test proof bytes + public inputs with the L1 Settlement project to verify their Solidity verifier accepts them
 
 ### Acceptance Criteria
 
-- [ ] `MsgSubmitAttestation` on the Cosmos chain rejects proofs where `current_block_height - proof_submission_height > ProofFreshnessBlocks` (default 100)
-- [ ] `ProofFreshnessBlocks` is a governance-adjustable parameter in `x/attestation` module params
-- [ ] `AttestationDirect.sol` contains no `block.timestamp` comparison for freshness
-- [ ] `L1_SETTLEMENT.md §4.3` documents the block-height model with rationale (miner timestamp manipulation mitigated)
-- [ ] Cosmos module test: submit proof at block 1, advance to block 102, attempt re-submit → `ErrProofExpired`
-- [ ] Marcus confirms: no freshness enforcement relies on `block.timestamp` in any security-critical path
-
----
-
-## TASK-15: StarkNet Settlement Stub (Phase 4 Preparation)
-
-**Owner:** Rania Aziz
-**Reviewer:** Sofia Esposito
-**Priority:** MEDIUM (Phase 4 — non-blocking for Phase 1 launch)
-**Complexity:** S
-**Blocked by:** None
-**Spec reference:** `project-scoping/docs/ARCHITECTURE.md §7 (Phase 4)`, `project-scoping/agents/starknet-engineer.md`
-
-### Problem Statement
-
-The Sur Protocol architecture documents StarkNet settlement as a Phase 4 target (`ARCHITECTURE.md §7`). Currently, no Cairo contracts or StarkNet-related files exist in the repository. The question is not whether to implement Phase 4 now — it's whether to create documented stubs that:
-1. Clarify the intended architecture in code (even before implementation)
-2. Allow the repository structure to reflect the full protocol scope
-3. Give Rania a clear starting point when Phase 4 begins
-
-Sofia's decision at the quarterly review: create empty Cairo contract stubs now, clearly marked as Phase 4 placeholders.
-
-### Files to Create
-
-```
-cairo/
-  README.md               → Phase 4 — StarkNet Settlement (not implemented)
-  SurSettlement.cairo     → Stub: epoch checkpoint contract for StarkNet
-  SurDirect.cairo         → Stub: individual attestation contract for StarkNet
-  Scarb.toml              → Cairo package manifest (minimal)
-```
-
-### `cairo/SurSettlement.cairo` — Stub Content
-
-```cairo
-// Sur Protocol — StarkNet Settlement Contract (Phase 4 Stub)
-// Status: NOT IMPLEMENTED — Phase 4 target
-// See project-scoping/docs/ARCHITECTURE.md §7 for design intent
-//
-// This contract will accept STARK proofs aggregated by the Sur batch prover
-// and store epoch state roots on StarkNet for permissionless verification.
-//
-// Key differences from EVM AttestationSettlement.sol:
-// - Uses STARK verification natively (no Groth16 wrapping needed)
-// - Poseidon is a first-class StarkNet primitive (no custom contract needed)
-// - Cairo's felt252 field is NOT BN254 — Poseidon parameters differ
-//   See: ARCHITECTURE.md §7.2 for field migration plan
-
-#[starknet::contract]
-mod SurSettlement {
-    // Phase 4: implement submitCheckpoint, verifyAttestation, getCheckpoint
-    // Pending: circuit adaptation to Cairo felt252 field
-    // Pending: Poseidon parameter re-derivation for StarkNet field
-    // Pending: STARK verifier interface definition
-}
-```
-
-### `cairo/SurDirect.cairo` — Stub Content
-
-```cairo
-// Sur Protocol — StarkNet Direct Attestation Contract (Phase 4 Stub)
-// Status: NOT IMPLEMENTED — Phase 4 target
-// See project-scoping/docs/ARCHITECTURE.md §7 for design intent
-//
-// This contract will accept individual STARK proofs for direct attestation
-// submission on StarkNet, with a nullifier set preventing replay.
-
-#[starknet::contract]
-mod SurDirect {
-    // Phase 4: implement submitAttestation, getAttestation, isNullifierUsed
-    // Pending: Cairo felt252 nullifier encoding (different field from BN254)
-    // Pending: STARK proof structure definition
-}
-```
-
-### `cairo/README.md` — Content
-
-```markdown
-# Cairo / StarkNet (Phase 4)
-
-This directory contains stub contracts for Sur Protocol's Phase 4 StarkNet settlement.
-
-**Status: Not implemented. Phase 4 target.**
-
-## What Phase 4 adds
-
-- `SurSettlement.cairo` — epoch checkpoint contract on StarkNet; accepts STARK aggregate proofs
-- `SurDirect.cairo` — individual attestation contract on StarkNet; maintains nullifier set
-
-## Key technical considerations
-
-1. **Field migration**: StarkNet uses the Stark curve's scalar field (`felt252`), not BN254. The Poseidon parameters used in the EVM contracts and gnark circuit are BN254-specific. Phase 4 requires re-deriving Poseidon parameters for the `felt252` field.
-2. **No Groth16 wrapping**: StarkNet can verify STARK proofs natively, eliminating the STARK → Groth16 wrapping step needed for EVM verification. This reduces proof size and eliminates the trusted setup dependency.
-3. **Cairo circuit**: The gnark Groth16 circuit (Phase 1) may need to be rewritten in a STARK-compatible proof system (e.g., Starkware's Stone prover, or SP1 with a STARK output) for native StarkNet verification.
-
-## References
-
-- `project-scoping/docs/ARCHITECTURE.md §7` — Phase 4 design
-- `project-scoping/agents/starknet-engineer.md` — Rania Aziz's spec
-- `project-scoping/agents/mathematician-researcher.md §post-quantum` — Dr. Amara Diallo's post-quantum migration analysis (STARKs are post-quantum secure)
-```
-
-### Acceptance Criteria
-
-- [ ] `cairo/` directory exists with `README.md`, `SurSettlement.cairo`, `SurDirect.cairo`, `Scarb.toml`
-- [ ] All Cairo files are clearly marked `// Status: NOT IMPLEMENTED — Phase 4 target`
-- [ ] `README.md` accurately documents the technical blockers (field migration, circuit adaptation)
-- [ ] `ARCHITECTURE.md §7` references the `cairo/` directory
-- [ ] Sofia confirms: stubs do not overpromise on Phase 4 delivery date or capability
+- [ ] `docs/INTEGRATION.md` created with all 3 chapters
+- [ ] Proto message definitions in §1 match the proto files generated by the Sur Chain project (verify with Arjun)
+- [ ] Proof format in §1.5 matches `PROOF_FORMAT.md §1.1` exactly (no drift)
+- [ ] ABI fragment in §2.2 matches the deployed `AttestationDirect.sol` (verify with Isabelle)
+- [ ] §3 development setup tested: a new engineer can follow it and successfully connect to local Sur Chain within 30 minutes
+- [ ] Sofia confirms: no jargon in user-facing error messages; no marketing language in technical sections
+- [ ] Shared with Sur Chain and L1 Settlement project teams for review
 
 ---
 
 *All medium-priority tasks reviewed at quarterly protocol review, 2026-03-27.*
-*These tasks are non-blocking for Phase 1 critical work. TASK-12 and TASK-13 should start in parallel with the critical stream.*
-*TASK-14 executes after TASK-7 (Cosmos) and TASK-5 (L1 contracts).*
-*TASK-15 can be done at any time — it is purely documentation/stubs.*
+*TASK-10 and TASK-11 are independent — start both immediately.*
+*TASK-12 produce a first draft now; update §1.5 when TASK-1 proof format is finalised.*
+*Cosmos chain implementation, SP1 batch prover, Solidity contracts, and TypeScript SDK are tracked in their respective project repositories.*
