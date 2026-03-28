@@ -1516,19 +1516,24 @@ struct SurTests {
         _ = session.computeSessionHash()
         session.humanTypingScore = HumanTypingEvaluator.evaluate(session: session)
         
-        // Generate ZK proof (now SNARK-style v2.0.0)
+        // Generate ZK proof
         guard let proof = ZKProofGenerator.generateProof(for: session) else {
             throw TestError.signingFailed
         }
         
         #expect(proof.version == "2.0.0")
         #expect(!proof.commitment.isEmpty)
-        #expect(!proof.nullifier.isEmpty)  // Fiat-Shamir derived
-        #expect(!proof.proof.isEmpty)      // Proof element π
-        #expect(proof.publicInputs.sessionHash == session.sessionHash)
-        #expect(proof.publicInputs.keystrokeCount == 5)
+        #expect(!proof.nullifier.isEmpty)
+        #expect(!proof.proof.isEmpty)
         
-        // Verify the proof (non-interactive verification)
+        // Verify public inputs have exactly 5 spec-compliant fields
+        #expect(!proof.publicInputs.usernameHash.isEmpty)
+        #expect(!proof.publicInputs.contentHashLo.isEmpty)
+        #expect(!proof.publicInputs.contentHashHi.isEmpty)
+        #expect(!proof.publicInputs.nullifier.isEmpty)
+        #expect(!proof.publicInputs.commitmentRoot.isEmpty)
+        
+        // Verify the proof
         let isValid = ZKProofGenerator.verifyProof(proof, session: session)
         #expect(isValid, "Generated ZK proof should be valid")
     }
@@ -1538,21 +1543,49 @@ struct SurTests {
         let invalidProof = ZKTypingProof(
             version: "2.0.0",
             commitment: "abc123",
-            nullifier: "def456", // Invalid nullifier
+            nullifier: "def456",
             proof: "ghi789",
             publicInputs: ZKPublicInputs(
-                sessionHash: "0x1234",
-                keystrokeCount: 5,
-                typingDuration: 1000,
-                userPublicKey: "pubkey1",
-                devicePublicKey: "pubkey2",
-                humanTypingScore: 85.0
+                usernameHash: "0x1234",
+                contentHashLo: "0x5678",
+                contentHashHi: "0x9abc",
+                nullifier: "",
+                commitmentRoot: "0xdef0"
             ),
             generatedAt: Int64(Date().timeIntervalSince1970 * 1000)
         )
         
         let isValid = ZKProofGenerator.verifyProof(invalidProof)
         #expect(!isValid, "Invalid proof should not verify")
+    }
+    
+    @Test func testZKPublicInputsPrivacy() async throws {
+        // Verify that ZKPublicInputs does NOT contain any behavioral statistics
+        let publicInputs = ZKPublicInputs(
+            usernameHash: "0x1234",
+            contentHashLo: "0x5678",
+            contentHashHi: "0x9abc",
+            nullifier: "0xdef0",
+            commitmentRoot: "0x1111"
+        )
+        
+        // Encode to JSON and verify no behavioral fields leak
+        let encoder = JSONEncoder()
+        let data = try encoder.encode(publicInputs)
+        let json = String(data: data, encoding: .utf8) ?? ""
+        
+        // These behavioral fields must NOT appear in public inputs
+        #expect(!json.contains("humanTypingScore"))
+        #expect(!json.contains("keystrokeCount"))
+        #expect(!json.contains("typingDuration"))
+        #expect(!json.contains("ikiValues"))
+        
+        // These are the only fields that should be present
+        #expect(json.contains("usernameHash"))
+        #expect(json.contains("contentHashLo"))
+        #expect(json.contains("contentHashHi"))
+        #expect(json.contains("nullifier"))
+        #expect(json.contains("commitmentRoot"))
     }
     
     @Test func testSolidityVerifierGeneration() async throws {
@@ -1562,9 +1595,16 @@ struct SurTests {
         #expect(solidityCode.contains("contract KeystrokeProofVerifier"))
         #expect(solidityCode.contains("function verifyProof"))
         #expect(solidityCode.contains("event ProofVerified"))
-        #expect(solidityCode.contains("mapping(bytes32 => bool) public verifiedProofs"))
-        #expect(solidityCode.contains("SNARK"))  // New SNARK-style proof
-        #expect(solidityCode.contains("nullifier"))  // Non-interactive
+        #expect(solidityCode.contains("Groth16Proof"))
+        #expect(solidityCode.contains("usernameHash"))
+        #expect(solidityCode.contains("contentHashLo"))
+        #expect(solidityCode.contains("contentHashHi"))
+        #expect(solidityCode.contains("nullifier"))
+        #expect(solidityCode.contains("commitmentRoot"))
+        // Behavioral stats must NOT appear in the Solidity contract's public inputs
+        #expect(!solidityCode.contains("keystrokeCount"))
+        #expect(!solidityCode.contains("typingDuration"))
+        #expect(!solidityCode.contains("humanTypingScore"))
     }
 }
 

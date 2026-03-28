@@ -211,23 +211,17 @@ public struct ZKTypingProof: Codable, Equatable {
     /// Generate the proof formatted for Remix IDE tuple input
     /// This creates a format that can be directly pasted into Remix's verifyProof function
     public func toRemixFormat() -> String {
-        // Ensure commitment has 0x prefix and is 32 bytes (64 hex chars)
         let commitmentHex = commitment.hasPrefix("0x") ? commitment : "0x" + commitment
         let nullifierHex = nullifier.hasPrefix("0x") ? nullifier : "0x" + nullifier
         let proofHex = proof.hasPrefix("0x") ? proof : "0x" + proof
-        let sessionHashHex = publicInputs.sessionHash.hasPrefix("0x") ? publicInputs.sessionHash : "0x" + publicInputs.sessionHash
+        let usernameHashHex = publicInputs.usernameHash.hasPrefix("0x") ? publicInputs.usernameHash : "0x" + publicInputs.usernameHash
+        let contentHashLoHex = publicInputs.contentHashLo.hasPrefix("0x") ? publicInputs.contentHashLo : "0x" + publicInputs.contentHashLo
+        let contentHashHiHex = publicInputs.contentHashHi.hasPrefix("0x") ? publicInputs.contentHashHi : "0x" + publicInputs.contentHashHi
+        let nullifierInputHex = publicInputs.nullifier.hasPrefix("0x") ? publicInputs.nullifier : "0x" + publicInputs.nullifier
+        let commitmentRootHex = publicInputs.commitmentRoot.hasPrefix("0x") ? publicInputs.commitmentRoot : "0x" + publicInputs.commitmentRoot
         
-        // Convert public keys to hex bytes (add 0x if needed)
-        let userPubKeyHex = publicInputs.userPublicKey.hasPrefix("0x") ? publicInputs.userPublicKey : "0x" + publicInputs.userPublicKey
-        let devicePubKeyHex = publicInputs.devicePublicKey.hasPrefix("0x") ? publicInputs.devicePublicKey : "0x" + publicInputs.devicePublicKey
-        
-        // IEEE 754 double bit pattern for humanTypingScore (big-endian)
-        let scoreBits = publicInputs.humanTypingScore.bitPattern.bigEndian
-        let scoreBitsHex = String(format: "0x%016llx", scoreBits)
-        
-        // Remix expects: [commitment, nullifier, proof, sessionHash, keystrokeCount, typingDuration, userPublicKey, devicePublicKey, humanTypingScore, humanTypingScoreBits, generatedAt]
         return """
-        ["\(commitmentHex)", "\(nullifierHex)", "\(proofHex)", "\(sessionHashHex)", \(publicInputs.keystrokeCount), \(publicInputs.typingDuration), "\(userPubKeyHex)", "\(devicePubKeyHex)", \(Int(publicInputs.humanTypingScore)), "\(scoreBitsHex)", \(generatedAt)]
+        ["\(commitmentHex)", "\(nullifierHex)", "\(proofHex)", "\(usernameHashHex)", "\(contentHashLoHex)", "\(contentHashHiHex)", "\(nullifierInputHex)", "\(commitmentRootHex)", \(generatedAt)]
         """
     }
     
@@ -236,27 +230,26 @@ public struct ZKTypingProof: Codable, Equatable {
         let commitmentHex = commitment.hasPrefix("0x") ? commitment : "0x" + commitment
         let nullifierHex = nullifier.hasPrefix("0x") ? nullifier : "0x" + nullifier
         let proofHex = proof.hasPrefix("0x") ? proof : "0x" + proof
-        let sessionHashHex = publicInputs.sessionHash.hasPrefix("0x") ? publicInputs.sessionHash : "0x" + publicInputs.sessionHash
-        let userPubKeyHex = publicInputs.userPublicKey.hasPrefix("0x") ? publicInputs.userPublicKey : "0x" + publicInputs.userPublicKey
-        let devicePubKeyHex = publicInputs.devicePublicKey.hasPrefix("0x") ? publicInputs.devicePublicKey : "0x" + publicInputs.devicePublicKey
-        let scoreBits = publicInputs.humanTypingScore.bitPattern.bigEndian
-        let scoreBitsHex = String(format: "0x%016llx", scoreBits)
+        let usernameHashHex = publicInputs.usernameHash.hasPrefix("0x") ? publicInputs.usernameHash : "0x" + publicInputs.usernameHash
+        let contentHashLoHex = publicInputs.contentHashLo.hasPrefix("0x") ? publicInputs.contentHashLo : "0x" + publicInputs.contentHashLo
+        let contentHashHiHex = publicInputs.contentHashHi.hasPrefix("0x") ? publicInputs.contentHashHi : "0x" + publicInputs.contentHashHi
+        let nullifierInputHex = publicInputs.nullifier.hasPrefix("0x") ? publicInputs.nullifier : "0x" + publicInputs.nullifier
+        let commitmentRootHex = publicInputs.commitmentRoot.hasPrefix("0x") ? publicInputs.commitmentRoot : "0x" + publicInputs.commitmentRoot
         
         return """
-        // Remix Input Format for verifyProof(SNARKProof)
-        // Paste this entire tuple into Remix:
+        // Remix Input Format for verifyProof
+        // Public inputs: [usernameHash, contentHashLo, contentHashHi, nullifier, commitmentRoot]
+        // Behavioral stats are private witnesses — NOT included in public inputs.
         
         [
-          "\(commitmentHex)",           // commitment (bytes32)
-          "\(nullifierHex)",            // nullifier (bytes32)
-          "\(proofHex)",                // proof (bytes32)
-          "\(sessionHashHex)",          // sessionHash (bytes32)
-          \(publicInputs.keystrokeCount),                           // keystrokeCount (uint256)
-          \(publicInputs.typingDuration),                           // typingDuration (uint256)
-          "\(userPubKeyHex)",           // userPublicKey (bytes)
-          "\(devicePubKeyHex)",         // devicePublicKey (bytes)
-          \(Int(publicInputs.humanTypingScore)),                    // humanTypingScore (uint256)
-          "\(scoreBitsHex)",            // humanTypingScoreBits (bytes8)
+          "\(commitmentHex)",           // commitment (bytes)
+          "\(nullifierHex)",            // proof nullifier (bytes)
+          "\(proofHex)",                // proof (bytes)
+          "\(usernameHashHex)",         // usernameHash (bytes32)
+          "\(contentHashLoHex)",        // contentHashLo (bytes32)
+          "\(contentHashHiHex)",        // contentHashHi (bytes32)
+          "\(nullifierInputHex)",       // nullifier (bytes32)
+          "\(commitmentRootHex)",       // commitmentRoot (bytes32)
           \(generatedAt)                // generatedAt (uint256)
         ]
         """
@@ -264,39 +257,37 @@ public struct ZKTypingProof: Codable, Equatable {
 }
 
 /// Public inputs for ZK proof verification
+/// Per PROOF_FORMAT.md §1.3, these are the ONLY public inputs.
+/// All behavioral statistics (humanTypingScore, keystrokeCount, typingDuration, IKI values)
+/// are private witnesses enforced as constraints inside the gnark circuit.
 public struct ZKPublicInputs: Codable, Equatable {
-    /// Hash of the session log
-    public let sessionHash: String
+    /// Hash of the username (BN254 field element)
+    public let usernameHash: String
     
-    /// Number of keystrokes in the session
-    public let keystrokeCount: Int
+    /// Lower 128 bits of SHA-256 content hash (BN254 field element)
+    public let contentHashLo: String
     
-    /// Duration of typing session in milliseconds
-    public let typingDuration: Int64
+    /// Upper 128 bits of SHA-256 content hash (BN254 field element)
+    public let contentHashHi: String
     
-    /// User's public key (for signature verification)
-    public let userPublicKey: String
+    /// Nullifier for replay protection (BN254 field element)
+    public let nullifier: String
     
-    /// Device's public key (for signature verification)
-    public let devicePublicKey: String
-    
-    /// Human typing score (0-100)
-    public let humanTypingScore: Double
+    /// Poseidon Merkle root from commitment tree (BN254 field element)
+    public let commitmentRoot: String
     
     public init(
-        sessionHash: String,
-        keystrokeCount: Int,
-        typingDuration: Int64,
-        userPublicKey: String,
-        devicePublicKey: String,
-        humanTypingScore: Double
+        usernameHash: String,
+        contentHashLo: String,
+        contentHashHi: String,
+        nullifier: String,
+        commitmentRoot: String
     ) {
-        self.sessionHash = sessionHash
-        self.keystrokeCount = keystrokeCount
-        self.typingDuration = typingDuration
-        self.userPublicKey = userPublicKey
-        self.devicePublicKey = devicePublicKey
-        self.humanTypingScore = humanTypingScore
+        self.usernameHash = usernameHash
+        self.contentHashLo = contentHashLo
+        self.contentHashHi = contentHashHi
+        self.nullifier = nullifier
+        self.commitmentRoot = commitmentRoot
     }
 }
 

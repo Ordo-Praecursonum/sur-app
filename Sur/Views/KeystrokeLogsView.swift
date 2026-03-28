@@ -549,28 +549,11 @@ struct ZKProofDetailView: View {
                 }
                 
                 Section("Public Inputs") {
-                    InfoRow(label: "Session Hash", value: proof.publicInputs.sessionHash, monospaced: true)
-                    InfoRow(label: "Keystrokes", value: "\(proof.publicInputs.keystrokeCount)")
-                    InfoRow(label: "Duration", value: "\(proof.publicInputs.typingDuration) ms")
-                    InfoRow(label: "Human Score", value: String(format: "%.1f%%", proof.publicInputs.humanTypingScore))
-                }
-                
-                Section("Public Keys") {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("User Public Key")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                        Text(proof.publicInputs.userPublicKey)
-                            .font(.system(.caption2, design: .monospaced))
-                    }
-                    
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Device Public Key")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                        Text(proof.publicInputs.devicePublicKey)
-                            .font(.system(.caption2, design: .monospaced))
-                    }
+                    InfoRow(label: "Username Hash", value: proof.publicInputs.usernameHash, monospaced: true)
+                    InfoRow(label: "Content Hash Lo", value: proof.publicInputs.contentHashLo, monospaced: true)
+                    InfoRow(label: "Content Hash Hi", value: proof.publicInputs.contentHashHi, monospaced: true)
+                    InfoRow(label: "Nullifier", value: proof.publicInputs.nullifier, monospaced: true)
+                    InfoRow(label: "Commitment Root", value: proof.publicInputs.commitmentRoot, monospaced: true)
                 }
                 
                 Section {

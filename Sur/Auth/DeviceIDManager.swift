@@ -8,6 +8,7 @@
 
 import Foundation
 import CryptoKit
+import Security
 import UIKit
 
 /// Error types for device key operations
@@ -16,6 +17,7 @@ enum DeviceIDError: LocalizedError {
     case derivationFailed
     case storageError
     case invalidPublicKey
+    case keychainError(OSStatus)
     
     var errorDescription: String? {
         switch self {
@@ -24,9 +26,11 @@ enum DeviceIDError: LocalizedError {
         case .derivationFailed:
             return "Failed to derive device key"
         case .storageError:
-            return "Failed to store device key in UserDefaults"
+            return "Failed to store device key in Keychain"
         case .invalidPublicKey:
             return "Failed to generate device public key"
+        case .keychainError(let status):
+            return "Keychain operation failed with status: \(status)"
         }
     }
 }
@@ -53,14 +57,17 @@ final class DeviceIDManager {
     /// UserDefaults key for device UUID
     private static let deviceUUIDKey = "device.uuid"
     
-    /// UserDefaults key for device private key (stored securely)
+    /// Keychain account identifier for device private key
     private static let devicePrivateKeyKey = "device.privateKey"
     
-    /// UserDefaults key for device public key
+    /// UserDefaults key for device public key (public — safe to store in UserDefaults)
     private static let devicePublicKeyKey = "device.publicKey"
     
     /// Shared app group identifier for keyboard extension access
     private static let sharedSuiteName = "group.com.ordo.sure.Sur"
+    
+    /// Keychain access group for sharing with keyboard extension
+    private static let keychainServiceName = "com.ordo.sure.Sur.keys"
     
     // MARK: - Singleton
     
@@ -134,21 +141,46 @@ final class DeviceIDManager {
     
     /// Save device keys to storage
     /// - Parameters:
-    ///   - privateKey: Device private key (32 bytes) - stored as hex string
-    ///   - publicKey: Device public key (65 bytes) - stored as hex string
+    ///   - privateKey: Device private key (32 bytes) - stored in Keychain
+    ///   - publicKey: Device public key (65 bytes) - stored as hex string in UserDefaults
     func saveDeviceKeys(privateKey: Data, publicKey: Data) {
-        let privateKeyHex = privateKey.map { String(format: "%02x", $0) }.joined()
         let publicKeyHex = publicKey.map { String(format: "%02x", $0) }.joined()
         
-        // Note: In production, device private key should be stored in Keychain
-        // For now, storing in UserDefaults as hex string
-        UserDefaults.standard.set(privateKeyHex, forKey: Self.devicePrivateKeyKey)
+        // Store private key in Keychain with device-only protection
+        // Key is not included in iCloud backup and cannot be migrated to another device
+        savePrivateKeyToKeychain(privateKey)
+        
+        // Public key is safe to store in UserDefaults (it's public information)
         UserDefaults.standard.set(publicKeyHex, forKey: Self.devicePublicKeyKey)
         
-        // Also save to shared UserDefaults for keyboard extension access
+        // Also save public key to shared UserDefaults for keyboard extension access
         if let sharedDefaults = UserDefaults(suiteName: Self.sharedSuiteName) {
-            sharedDefaults.set(privateKeyHex, forKey: Self.devicePrivateKeyKey)
             sharedDefaults.set(publicKeyHex, forKey: Self.devicePublicKeyKey)
+        }
+    }
+    
+    /// Save private key to Keychain with device-only, non-migratable protection
+    private func savePrivateKeyToKeychain(_ privateKey: Data) {
+        // First, delete any existing key
+        let deleteQuery: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: Self.keychainServiceName,
+            kSecAttrAccount as String: Self.devicePrivateKeyKey
+        ]
+        SecItemDelete(deleteQuery as CFDictionary)
+        
+        // Add new key with device-only protection
+        let addQuery: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: Self.keychainServiceName,
+            kSecAttrAccount as String: Self.devicePrivateKeyKey,
+            kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
+            kSecValueData as String: privateKey
+        ]
+        
+        let status = SecItemAdd(addQuery as CFDictionary, nil)
+        if status != errSecSuccess {
+            print("Warning: Failed to save private key to Keychain (status: \(status))")
         }
     }
     
@@ -174,11 +206,18 @@ final class DeviceIDManager {
     /// Get stored device private key
     /// - Returns: Device private key as Data (32 bytes), if available
     func getStoredDevicePrivateKey() -> Data? {
-        guard let privateKeyHex = UserDefaults.standard.string(forKey: Self.devicePrivateKeyKey) else {
-            return nil
-        }
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: Self.keychainServiceName,
+            kSecAttrAccount as String: Self.devicePrivateKeyKey,
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne
+        ]
         
-        guard let data = hexStringToData(privateKeyHex) else {
+        var result: AnyObject?
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        
+        guard status == errSecSuccess, let data = result as? Data else {
             return nil
         }
         
@@ -225,7 +264,15 @@ final class DeviceIDManager {
     
     /// Clear device keys (when wallet is deleted)
     func clearDeviceKeys() {
-        UserDefaults.standard.removeObject(forKey: Self.devicePrivateKeyKey)
+        // Remove private key from Keychain
+        let deleteQuery: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: Self.keychainServiceName,
+            kSecAttrAccount as String: Self.devicePrivateKeyKey
+        ]
+        SecItemDelete(deleteQuery as CFDictionary)
+        
+        // Remove public key from UserDefaults
         UserDefaults.standard.removeObject(forKey: Self.devicePublicKeyKey)
         // Note: We keep the device UUID to maintain device identity
     }
