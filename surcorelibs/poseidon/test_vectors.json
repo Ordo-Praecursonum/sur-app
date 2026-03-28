@@ -1,0 +1,173 @@
+{
+  "description": "Poseidon hash test vectors over BN254 scalar field. Canonical instantiation: rate=2, capacity=1, 8 full rounds, 57 partial rounds, S-box x^5. These vectors MUST match across Sur iOS app, Sur Chain (Solidity PoseidonHasher.sol), and L1 Settlement (Rust poseidon_bn254 crate).",
+  "parameters": {
+    "field": "BN254 scalar field (p = 21888242871839275222246405745257275088548364400416034343698204186575808495617)",
+    "rate": 2,
+    "capacity": 1,
+    "full_rounds": 8,
+    "partial_rounds": 57,
+    "sbox": "x^5"
+  },
+  "vectors": [
+    {
+      "label": "canonical_1_2",
+      "inputs": [
+        "0x1",
+        "0x2"
+      ],
+      "expected": "0x115cc0f5e7d690413df64c6b9662e9cf2a3617f2743245519e19607a4417189a"
+    },
+    {
+      "label": "zero_zero",
+      "inputs": [
+        "0x0",
+        "0x0"
+      ],
+      "expected": "0x2098f5fb9e239eab3ceac3f27b81e481dc3124d55ffed523a839ee8446b64864"
+    },
+    {
+      "label": "one_one",
+      "inputs": [
+        "0x1",
+        "0x1"
+      ],
+      "expected": "0x7af346e2d304279e79e0a9f3023f771294a78acb70e73f90afe27cad401e81"
+    },
+    {
+      "label": "small_3_4",
+      "inputs": [
+        "0x3",
+        "0x4"
+      ],
+      "expected": "0x20a3af0435914ccd84b806164531b0cd36e37d4efb93efab76913a93e1f30996"
+    },
+    {
+      "label": "small_5_6",
+      "inputs": [
+        "0x5",
+        "0x6"
+      ],
+      "expected": "0x427b43899bdfc36d3d4f26c018dd73f5437ea8e5f533fc122441881d5d0b737"
+    },
+    {
+      "label": "small_7_8",
+      "inputs": [
+        "0x7",
+        "0x8"
+      ],
+      "expected": "0x2aef487272d385cd5eba40e25144e80641fef93ff5b25a0133b0d1bd50077920"
+    },
+    {
+      "label": "small_9_10",
+      "inputs": [
+        "0x9",
+        "0xa"
+      ],
+      "expected": "0x1cae3c826d7ef86b504622ecd6ce8162d413d90453f7918b7b92459b7e6354f9"
+    },
+    {
+      "label": "small_100_200",
+      "inputs": [
+        "0x64",
+        "0xc8"
+      ],
+      "expected": "0x82db746879418e842d42f56a8058925f5428ea9a13b9e0ff817e5b94b1c2e3c"
+    },
+    {
+      "label": "medium_1000_2000",
+      "inputs": [
+        "0x3e8",
+        "0x7d0"
+      ],
+      "expected": "0x166d5cda339e5bb3ab379914116fddcb93e032a3d0dff2faa0654d7ee9f8457e"
+    },
+    {
+      "label": "medium_12345_67890",
+      "inputs": [
+        "0x3039",
+        "0x10932"
+      ],
+      "expected": "0x1914879b2a4e7f9555f3eb55837243cefb1366a692794a7e5b5b3181fb14b49b"
+    },
+    {
+      "label": "large_values",
+      "inputs": [
+        "0xffffffffffffffff",
+        "0xfffffffffffffffe"
+      ],
+      "expected": "0x99ce883dffa514c1d5ce54bfd9676f08c69a897cb528f2fd74e332de003086f"
+    },
+    {
+      "label": "nullifier_sample_counter0",
+      "inputs": [
+        "0x2a",
+        "0x0"
+      ],
+      "expected": "0x8fb15898b5e4c6b8c1ee35eff746c62fc2f2c64c777e78640ece1f70a326d58"
+    },
+    {
+      "label": "nullifier_sample_counter1",
+      "inputs": [
+        "0x2a",
+        "0x1"
+      ],
+      "expected": "0x249a628467bd8aee0e896aed253246bad19f524fe2832233cfaf08b5851d6111"
+    },
+    {
+      "label": "nullifier_sample_counter42",
+      "inputs": [
+        "0x2a",
+        "0x2a"
+      ],
+      "expected": "0xfd9ef796f706fe5915667b9fcf1b8f45677083abcde9cca528676d42dfeeeab"
+    },
+    {
+      "label": "commitment_sample",
+      "inputs": [
+        "0x42",
+        "0x999"
+      ],
+      "expected": "0x197e275759ea7ab0ffb2358f90187702e2f616c2c03521a02d4bd7d608abebd5"
+    },
+    {
+      "label": "merkle_left_right",
+      "inputs": [
+        "0x100",
+        "0x200"
+      ],
+      "expected": "0x2fa6c43289767f8304e36c8816684136ce6c7581b156a6c335061110d4dc08a8"
+    },
+    {
+      "label": "reversed_2_1",
+      "inputs": [
+        "0x2",
+        "0x1"
+      ],
+      "expected": "0x1576c555b70c9b778666e91d600fdc6d73f30aeed2f6adc5360d6a052259775a"
+    },
+    {
+      "label": "large_field_element",
+      "inputs": [
+        "0x30644e72e131a029b85045b68181585d2833e84879b9709143e1f593f0000000",
+        "0x1"
+      ],
+      "expected": "0x241af30a65318c4636803d8133f87ce755ed485f10695563caff5ed186bccf7d"
+    },
+    {
+      "label": "power_of_two",
+      "inputs": [
+        "0x10000",
+        "0x20000"
+      ],
+      "expected": "0x8f49c1a67d01d4985ce9febbcfe0a60ee17113f95c532c2177bf94b07926b6f"
+    },
+    {
+      "label": "sequential_255_256",
+      "inputs": [
+        "0xff",
+        "0x100"
+      ],
+      "expected": "0x1f9f8323472b800bdc7628c51fb6dfb2e16de1ffa6ed265490b9b6fcf54597c0"
+    }
+  ]
+}
