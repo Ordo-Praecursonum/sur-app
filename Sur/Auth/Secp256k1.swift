@@ -157,30 +157,39 @@ final class Secp256k1 {
         }
         result[0] = UInt8(carry)
 
-        // If result >= n, subtract n once (at most once since a,b < n implies a+b < 2n)
-        // Check if we need to reduce by comparing with n (preceded by 0x00)
-        var needsReduction = false
-        if result[0] > 0 {
-            needsReduction = true
-        } else {
-            // Compare the 32-byte portion with curve order
-            let resultPart = Array(result[1...])
-            needsReduction = !isLessThanCurveOrder(resultPart)
-        }
-
         var finalResult = Array(result[1...])  // Get the 32-byte portion
 
-        if needsReduction {
-            // Subtract curve order once
-            var borrow: Int16 = 0
+        if result[0] > 0 {
+            // 33-bit overflow: actual sum = 2^256 + finalResult
+            // (a+b) mod n = finalResult + (2^256 - n)
+            // 2^256 - n for secp256k1 = 0x000000000000000000000000000000014551231950B75FC4402DA1732FC9BEBF
+            let complement: [UInt8] = [
+                0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01,
+                0x45, 0x51, 0x23, 0x19, 0x50, 0xB7, 0x5F, 0xC4,
+                0x40, 0x2D, 0xA1, 0x73, 0x2F, 0xC9, 0xBE, 0xBF
+            ]
+            var carry2: UInt16 = 0
             for i in (0..<32).reversed() {
-                let diff = Int16(finalResult[i]) - Int16(curveOrderBytes[i]) - borrow
-                if diff < 0 {
-                    finalResult[i] = UInt8((diff + 256) & 0xFF)
-                    borrow = 1
-                } else {
-                    finalResult[i] = UInt8(diff & 0xFF)
-                    borrow = 0
+                let sum = UInt16(finalResult[i]) + UInt16(complement[i]) + carry2
+                finalResult[i] = UInt8(sum & 0xFF)
+                carry2 = sum >> 8
+            }
+            // carry2 is guaranteed 0 since finalResult < n - complement < 2^256
+        } else {
+            // No overflow, check if result_lower >= n and subtract n once if so
+            let needsReduction = !isLessThanCurveOrder(finalResult)
+            if needsReduction {
+                var borrow: Int16 = 0
+                for i in (0..<32).reversed() {
+                    let diff = Int16(finalResult[i]) - Int16(curveOrderBytes[i]) - borrow
+                    if diff < 0 {
+                        finalResult[i] = UInt8((diff + 256) & 0xFF)
+                        borrow = 1
+                    } else {
+                        finalResult[i] = UInt8(diff & 0xFF)
+                        borrow = 0
+                    }
                 }
             }
         }
@@ -226,17 +235,18 @@ final class Secp256k1 {
             
             // Sign the message hash
             let signature = try privKey.signature(for: messageHash)
-            
-            // Get signature data - P256K returns this in compact format (64 bytes)
-            let sigData = signature.dataRepresentation
-            
+
+            // Get compact (R || S) representation: 64 bytes, big-endian R then big-endian S.
+            // IMPORTANT: signature.dataRepresentation is libsecp256k1's internal opaque format,
+            // NOT compact R||S bytes. compactRepresentation calls secp256k1_ecdsa_signature_serialize_compact
+            // to produce proper 64-byte R||S output.
+            let sigData = try signature.compactRepresentation
+
             #if DEBUG
             print("[Secp256k1] Signature length: \(sigData.count)")
             print("[Secp256k1] Signature: \(sigData.map { String(format: "%02x", $0) }.joined())")
             #endif
-            
-            // P256K's dataRepresentation is already in raw R,S format (64 bytes: 32R + 32S)
-            // No need to convert from DER
+
             guard sigData.count == 64 else {
                 #if DEBUG
                 print("[Secp256k1] Signature is not 64 bytes, got \(sigData.count)")
@@ -263,7 +273,32 @@ final class Secp256k1 {
             return nil
         }
     }
-    
+
+    /// Sign a RAW message, applying SHA-256 EXACTLY ONCE, returning a 64-byte
+    /// compact (R‖S), low-S signature.
+    ///
+    /// Use this for Cosmos SIGN_MODE_DIRECT: the chain verifies the secp256k1
+    /// signature over SHA-256(SignDoc), so pass the SignDoc bytes here. Do NOT use
+    /// `sign(messageHash:)` for that — it routes through P256K's `signature(for:)`
+    /// Data overload which ALSO hashes with SHA-256, producing a double-hashed
+    /// signature that fails Cosmos verification.
+    static func signMessage(_ message: Data, with privateKey: Data) -> Data? {
+        guard privateKey.count == 32 else { return nil }
+        do {
+            let privKey = try P256K.Signing.PrivateKey(dataRepresentation: privateKey)
+            // The DataProtocol overload hashes the message with SHA-256 once, then signs.
+            let signature = try privKey.signature(for: message)
+            let sigData = try signature.compactRepresentation
+            guard sigData.count == 64 else { return nil }
+            return normalizeSignature(sigData)
+        } catch {
+            #if DEBUG
+            print("[Secp256k1] signMessage failed: \(error)")
+            #endif
+            return nil
+        }
+    }
+
     /// Verify an ECDSA signature for a message hash
     ///
     /// - Parameters:
@@ -297,11 +332,13 @@ final class Secp256k1 {
         do {
             // Create P256K public key from uncompressed representation
             let pubKey = try P256K.Signing.PublicKey(x963Representation: publicKey)
-            
-            // Create P256K signature directly from raw 64-byte representation
-            // P256K's dataRepresentation accepts compact 64-byte format (R + S)
-            let sig = try P256K.Signing.ECDSASignature(dataRepresentation: signature)
-            
+
+            // Parse compact (R || S) bytes back to internal secp256k1 format.
+            // ECDSASignature(dataRepresentation:) stores bytes as the opaque libsecp256k1
+            // internal format. Compact R||S bytes must be parsed with compactRepresentation
+            // which calls secp256k1_ecdsa_signature_parse_compact internally.
+            let sig = try P256K.Signing.ECDSASignature(compactRepresentation: signature)
+
             // Verify the signature
             return pubKey.isValidSignature(sig, for: messageHash)
         } catch {

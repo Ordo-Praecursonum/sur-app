@@ -1,0 +1,39 @@
+name: PR Checks
+
+on:
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  lint-go:
+    name: Go Lint (surcorelibs)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go 1.22
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v4
+        with:
+          working-directory: surcorelibs
+          version: v1.57
+          args: --timeout 5m
+
+  poseidon-test-vector:
+    name: Verify Poseidon Test Vector
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go 1.22
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      - name: Run Poseidon canonical test vector check
+        working-directory: surcorelibs
+        run: go test ./poseidon/... -run TestCanonicalVector -v

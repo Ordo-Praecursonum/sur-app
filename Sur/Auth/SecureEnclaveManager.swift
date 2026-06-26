@@ -8,6 +8,7 @@
 import Foundation
 import Security
 import LocalAuthentication
+import CryptoKit
 
 /// Error types for secure storage operations
 enum SecureStorageError: LocalizedError {
@@ -321,15 +322,128 @@ final class SecureEnclaveManager {
             kSecAttrService as String: service,
             kSecAttrAccount as String: key.rawValue
         ]
-        
+
         if let accessGroup = accessGroup {
             query[kSecAttrAccessGroup as String] = accessGroup
         }
-        
+
         let status = SecItemDelete(query as CFDictionary)
-        
+
         guard status == errSecSuccess || status == errSecItemNotFound else {
             throw SecureStorageError.keychainError(status)
         }
+    }
+
+    // MARK: - Device Signing Key (Shared with Keyboard Extension)
+
+    private enum SEKeyLabel {
+        static let deviceKey = "com.ordo.sur.device.seKey"
+    }
+
+    /// Create a P-256 Secure Enclave key for device signing, shared with the keyboard extension.
+    ///
+    /// This key is used by the keyboard extension to sign session bundles.
+    /// Unlike the mnemonic/private key, this key does not require biometric authentication
+    /// (so the keyboard extension can use it without interrupting the user).
+    func createDeviceSigningKey() throws -> SecKey {
+        guard SecureEnclave.isAvailable else {
+            throw SecureStorageError.secureEnclaveNotAvailable
+        }
+
+        // Delete existing key if present
+        let deleteQuery: [String: Any] = [
+            kSecClass as String: kSecClassKey,
+            kSecAttrApplicationLabel as String: SEKeyLabel.deviceKey,
+            kSecAttrAccessGroup as String: accessGroup as Any
+        ]
+        SecItemDelete(deleteQuery as CFDictionary)
+
+        // Create access control — no biometric required (keyboard extension must access without user interaction)
+        var error: Unmanaged<CFError>?
+        guard let accessControl = SecAccessControlCreateWithFlags(
+            kCFAllocatorDefault,
+            kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
+            .privateKeyUsage,
+            &error
+        ) else {
+            throw SecureStorageError.accessControlCreationFailed
+        }
+
+        let keyAttributes: [String: Any] = [
+            kSecAttrKeyType as String: kSecAttrKeyTypeECSECPrimeRandom,
+            kSecAttrKeySizeInBits as String: 256,
+            kSecAttrTokenID as String: kSecAttrTokenIDSecureEnclave,
+            kSecAttrApplicationLabel as String: SEKeyLabel.deviceKey,
+            kSecAttrAccessGroup as String: accessGroup as Any,
+            kSecPrivateKeyAttrs as String: [
+                kSecAttrIsPermanent as String: true,
+                kSecAttrAccessControl as String: accessControl
+            ]
+        ]
+
+        guard let privateKey = SecKeyCreateRandomKey(keyAttributes as CFDictionary, &error) else {
+            throw SecureStorageError.keychainError(errSecParam)
+        }
+
+        return privateKey
+    }
+
+    /// Get the existing device signing key reference, or create one if it doesn't exist.
+    func getOrCreateDeviceSigningKey() throws -> SecKey {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassKey,
+            kSecAttrKeyType as String: kSecAttrKeyTypeECSECPrimeRandom,
+            kSecAttrTokenID as String: kSecAttrTokenIDSecureEnclave,
+            kSecAttrApplicationLabel as String: SEKeyLabel.deviceKey,
+            kSecAttrAccessGroup as String: accessGroup as Any,
+            kSecReturnRef as String: true
+        ]
+
+        var result: AnyObject?
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+
+        if status == errSecSuccess, let key = result {
+            return (key as! SecKey)
+        }
+
+        // Key doesn't exist — create it
+        return try createDeviceSigningKey()
+    }
+
+    /// Get the public key bytes for the device signing key (for inclusion in Cosmos MsgAddDevice).
+    func getDeviceSigningPublicKeyBytes() throws -> Data {
+        let privateKey = try getOrCreateDeviceSigningKey()
+        guard let publicKey = SecKeyCopyPublicKey(privateKey) else {
+            throw SecureStorageError.keychainError(errSecParam)
+        }
+
+        var error: Unmanaged<CFError>?
+        guard let publicKeyData = SecKeyCopyExternalRepresentation(publicKey, &error) as Data? else {
+            throw SecureStorageError.keychainError(errSecParam)
+        }
+
+        // Returns 65-byte uncompressed P-256 point: 0x04 || X(32) || Y(32)
+        return publicKeyData
+    }
+
+    /// Sign a payload with the device P-256 key, producing an ASN.1 DER ECDSA
+    /// signature over SHA-256(payload).
+    ///
+    /// This is the `identity_sig` for MsgRegisterUsername / MsgAddDevice: the Sur
+    /// Chain verifies it with `ecdsa.VerifyASN1(controlPubkey, sha256(payload), sig)`,
+    /// where `controlPubkey` is the 65-byte key from `getDeviceSigningPublicKeyBytes()`.
+    /// `.ecdsaSignatureMessageX962SHA256` hashes with SHA-256 internally and emits DER.
+    func signWithDeviceKey(_ payload: Data) throws -> Data {
+        let privateKey = try getOrCreateDeviceSigningKey()
+        var error: Unmanaged<CFError>?
+        guard let sig = SecKeyCreateSignature(
+            privateKey,
+            .ecdsaSignatureMessageX962SHA256,
+            payload as CFData,
+            &error
+        ) as Data? else {
+            throw SecureStorageError.keychainError(errSecParam)
+        }
+        return sig
     }
 }

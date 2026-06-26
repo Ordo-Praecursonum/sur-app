@@ -1525,8 +1525,10 @@ struct SurTests {
         #expect(!proof.commitment.isEmpty)
         #expect(!proof.nullifier.isEmpty)  // Fiat-Shamir derived
         #expect(!proof.proof.isEmpty)      // Proof element π
-        #expect(proof.publicInputs.sessionHash == session.sessionHash)
-        #expect(proof.publicInputs.keystrokeCount == 5)
+        // Public inputs now carry the 5 BN254 field elements; behavioral data is a private witness
+        #expect(!proof.publicInputs.nullifier.isEmpty)
+        #expect(!proof.publicInputs.commitmentRoot.isEmpty)
+        #expect(proof.publicInputsArray().count == 5)
         
         // Verify the proof (non-interactive verification)
         let isValid = ZKProofGenerator.verifyProof(proof, session: session)
@@ -1535,29 +1537,29 @@ struct SurTests {
     
     @Test func testZKProofVerification() async throws {
         // Test that invalid proofs fail verification
+        // A proof whose body nullifier does not match publicInputs.nullifier must fail
         let invalidProof = ZKTypingProof(
             version: "2.0.0",
             commitment: "abc123",
-            nullifier: "def456", // Invalid nullifier
+            nullifier: "def456",  // body nullifier deliberately mismatches publicInputs.nullifier
             proof: "ghi789",
             publicInputs: ZKPublicInputs(
-                sessionHash: "0x1234",
-                keystrokeCount: 5,
-                typingDuration: 1000,
-                userPublicKey: "pubkey1",
-                devicePublicKey: "pubkey2",
-                humanTypingScore: 85.0
+                usernameHash: "0x" + String(repeating: "00", count: 32),
+                contentHashLo: "0x" + String(repeating: "00", count: 32),
+                contentHashHi: "0x" + String(repeating: "00", count: 32),
+                nullifier: "aabbcc",  // differs from body nullifier above
+                commitmentRoot: "0x" + String(repeating: "00", count: 32)
             ),
             generatedAt: Int64(Date().timeIntervalSince1970 * 1000)
         )
-        
+
         let isValid = ZKProofGenerator.verifyProof(invalidProof)
-        #expect(!isValid, "Invalid proof should not verify")
+        #expect(!isValid, "Proof with mismatched nullifier should not verify")
     }
     
     @Test func testSolidityVerifierGeneration() async throws {
         let solidityCode = ZKProofGenerator.generateSolidityVerifier()
-        
+
         #expect(!solidityCode.isEmpty)
         #expect(solidityCode.contains("contract KeystrokeProofVerifier"))
         #expect(solidityCode.contains("function verifyProof"))
@@ -1565,6 +1567,94 @@ struct SurTests {
         #expect(solidityCode.contains("mapping(bytes32 => bool) public verifiedProofs"))
         #expect(solidityCode.contains("SNARK"))  // New SNARK-style proof
         #expect(solidityCode.contains("nullifier"))  // Non-interactive
+    }
+
+    // MARK: - Diagnostic: Verify address encoding with known private key
+
+    @Test func testBitcoinAddressEncodingKnownVector() async throws {
+        // Private key = 1 (generator point) has a well-known Bitcoin P2WPKH address.
+        // Expected: bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4
+        // Compressed pubkey: 0279BE667EF9DCBBAC55A06295CE870B07029BFCDB2DCE28D959F2815B16F81798
+        // SHA256(compressed): 0f715baf5d4c2ed329785cef29e562f73488c8a2bb9dbc5700b361d54b9b0554
+        // RIPEMD160(sha256): 751e76e8199196f58c7dc87a08d2380635dc881a
+        var privateKeyOne = Data(repeating: 0x00, count: 31)
+        privateKeyOne.append(0x01)
+
+        // Verify compressed public key
+        guard let compressed = Secp256k1.deriveCompressedPublicKey(from: privateKeyOne) else {
+            throw TestError.publicKeyDerivationFailed
+        }
+        let compressedHex = compressed.map { String(format: "%02x", $0) }.joined()
+        #expect(compressedHex == "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+                "Compressed public key for key=1 must be the generator point G compressed")
+
+        // Verify SHA256 of compressed pubkey
+        let sha256 = SHA256.hash(data: compressed)
+        let sha256Hex = Data(sha256).map { String(format: "%02x", $0) }.joined()
+        #expect(sha256Hex == "0f715baf5d4c2ed329785cef29e562f73488c8a2bb9dbc5700b361d54b9b0554",
+                "SHA256 of compressed pubkey for key=1")
+
+        // Verify RIPEMD160 of SHA256 (hash160)
+        let hash160 = RIPEMD160.hash(Data(sha256))
+        let hash160Hex = hash160.map { String(format: "%02x", $0) }.joined()
+        #expect(hash160Hex == "751e76e8199196f58c7dc87a08d2380635dc881a",
+                "RIPEMD160(SHA256(compressedPubkey)) for key=1")
+
+        // Verify Bech32 SegWit encoding
+        guard let btcAddr = Bech32.encodeSegWit(hrp: "bc", witnessVersion: 0, witnessProgram: hash160) else {
+            throw TestError.bech32EncodingFailed
+        }
+        #expect(btcAddr == "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4",
+                "Bitcoin P2WPKH address for key=1: got \(btcAddr)")
+    }
+
+    // MARK: - Diagnostic: Verify MultiChainKeyManager against known test vectors
+
+    @Test func testDiagnosticAbandonMnemonicAllChains() async throws {
+        let mnemonic = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
+        var output = ""
+
+        // Step 1: Verify the BIP-39 seed matches the known test vector
+        let seed = try MnemonicGenerator.mnemonicToSeed(mnemonic)
+        let seedHex = seed.map { String(format: "%02x", $0) }.joined()
+        let expectedSeedHex = "5eb00bbddcf069084889a8ab9155568165f5c453ccb85e70811aaed6f6da5fc19a5ac40b389cd370d086206dec8aa6c43daea6690f20ad3d8d48b2d2ce9e38e4"
+        output += "Seed:           \(seedHex)\n"
+        output += "Expected seed:  \(expectedSeedHex)\n"
+        output += "Seed matches:   \(seedHex == expectedSeedHex)\n"
+        #expect(seedHex == expectedSeedHex, "BIP-39 seed for abandon mnemonic must match known test vector")
+
+        // Step 2: MultiChainKeyManager Ethereum — known MetaMask address
+        let (ethKey, ethAddr) = try MultiChainKeyManager.generateKeysForNetwork(mnemonic, network: .ethereum)
+        let ethKeyHex = ethKey.map { String(format: "%02x", $0) }.joined()
+        let expectedEthAddr = "0x9858effd232b4033e47d90003d41ec34ecaeda94"
+        output += "ETH key:        \(ethKeyHex)\n"
+        output += "ETH address:    \(ethAddr)\n"
+        output += "Expected ETH:   \(expectedEthAddr)\n"
+        output += "ETH matches:    \(ethAddr.lowercased() == expectedEthAddr)\n"
+        #expect(ethAddr.lowercased() == expectedEthAddr, "MultiChainKeyManager Ethereum address must match MetaMask")
+
+        // Step 3: Bitcoin — assert key so failure shows value
+        let (btcKey, btcAddr) = try MultiChainKeyManager.generateKeysForNetwork(mnemonic, network: .bitcoin)
+        let btcKeyHex = btcKey.map { String(format: "%02x", $0) }.joined()
+        // Also compute compressed pubkey and hash160 for diagnosis
+        let btcCompressed = Secp256k1.deriveCompressedPublicKey(from: btcKey)
+        let btcCompressedHex = btcCompressed?.map { String(format: "%02x", $0) }.joined() ?? "nil"
+        #expect(btcAddr == "bc1qcr8te4kr6gch7z8stxu842stf3d85zw027pnp9",
+                "BTC private key=\(btcKeyHex) compressed=\(btcCompressedHex) addr=\(btcAddr)")
+
+        // Step 4: Cosmos — assert key so failure shows value
+        let (cosmosKey, cosmosAddr) = try MultiChainKeyManager.generateKeysForNetwork(mnemonic, network: .cosmos)
+        let cosmosKeyHex = cosmosKey.map { String(format: "%02x", $0) }.joined()
+        #expect(cosmosAddr == "cosmos1r5v5srda7xfth3hn2s26txvrcrntldjumt8mhl",
+                "Cosmos private key=\(cosmosKeyHex) addr=\(cosmosAddr)")
+
+        // Step 5: Solana — assert key so failure shows value
+        let (solKey, solAddr) = try MultiChainKeyManager.generateKeysForNetwork(mnemonic, network: .solana)
+        let solKeyHex = solKey.map { String(format: "%02x", $0) }.joined()
+        #expect(solAddr == "DRpbCBMxVnDK7maPM5tGv6MvB3v1sRMC86PZ8okm21hy",
+                "Solana private key=\(solKeyHex) addr=\(solAddr)")
+
+        _ = output  // suppress unused warning
     }
 }
 

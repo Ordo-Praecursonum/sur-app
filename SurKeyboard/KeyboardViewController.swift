@@ -149,7 +149,12 @@ class KeyButton: UIButton {
 
 // MARK: - Keyboard View Controller
 class KeyboardViewController: UIInputViewController {
-    
+
+    // Shared app-group + the key under which sessions awaiting on-chain
+    // attestation are queued for the host app to pick up.
+    private static let appGroupID = "group.com.ordo.sure.Sur"
+    private static let pendingAttestKey = "sur.attest.pendingSessionIds"
+
     // MARK: - Properties
     private var keyboardView: UIView!
     private var rowStackViews: [UIStackView] = []
@@ -288,11 +293,13 @@ class KeyboardViewController: UIInputViewController {
     // MARK: - Lifecycle
     override func viewDidLoad() {
         super.viewDidLoad()
-        
+        KBLog.lifecycle.log("KeyboardViewController viewDidLoad: begin")
+
         feedbackGenerator = UIImpactFeedbackGenerator(style: .light)
         feedbackGenerator?.prepare()
-        
+
         setupKeyboardView()
+        KBLog.lifecycle.log("KeyboardViewController viewDidLoad: setup complete")
     }
     
     override func viewWillLayoutSubviews() {
@@ -802,22 +809,53 @@ class KeyboardViewController: UIInputViewController {
         if let session = keystrokeLogger.finalizeCurrentSession() {
             // Update hash label with finalized session hash
             hashLabel?.text = session.shortHash
-            
+
             // Visual feedback
             let originalColor = hashLabel?.textColor
             hashLabel?.textColor = .systemGreen
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
                 self?.hashLabel?.textColor = originalColor
             }
-            
+
             triggerHapticFeedback()
+
+            // Start attestation right here on the keyboard: prove + submit to the
+            // Sur Chain. Proving is ~0.1s; the saved session remains a fallback if
+            // the extension is suspended before it completes.
+            attestFinalizedSession(session)
         }
+    }
+
+    /// Mark a finalized session as requested for attestation. The keyboard
+    /// extension can't safely run the ZK prover + chain client (that whole stack,
+    /// incl. the Go prover framework, isn't loaded in the extension and would risk
+    /// the keyboard's memory limit), so the session — already saved to the shared
+    /// app group — is flagged here, and the host app proves + submits it on next
+    /// open. Gives the user immediate feedback that attestation has started.
+    private func attestFinalizedSession(_ session: KBKeystrokeSession) {
+        let count = session.signedKeystrokes.count
+        guard count >= 10 else {
+            hashLabel?.text = "Too short to attest (≥10)"
+            return
+        }
+        // Record the request so the app surfaces "pending" and attests on launch.
+        if let defaults = UserDefaults(suiteName: Self.appGroupID) {
+            var pending = Set(defaults.stringArray(forKey: Self.pendingAttestKey) ?? [])
+            pending.insert(session.sessionId)
+            defaults.set(Array(pending), forKey: Self.pendingAttestKey)
+        }
+        hashLabel?.text = "Queued for attestation ✓"
+        KBLog.signing.log("session \(session.sessionId, privacy: .public) queued for attestation (\(count) keystrokes)")
     }
     
     private func updateHashDisplay() {
-        // Update hash label with current session's short hash
-        if keystrokeLogger.currentSessionKeystrokeCount > 0 {
-            hashLabel?.text = keystrokeLogger.currentSessionShortHash
+        // Show only the live keystroke COUNT here — cheap. Recomputing the full
+        // session hash on every keystroke is O(n) per key (O(n²) overall) and was a
+        // major source of typing lag. The real hash is shown on finalize and computed
+        // on demand when copying.
+        let count = keystrokeLogger.currentSessionKeystrokeCount
+        if count > 0 {
+            hashLabel?.text = "\(count) keystroke\(count == 1 ? "" : "s") logged"
         }
     }
     

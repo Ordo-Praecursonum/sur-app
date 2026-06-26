@@ -11,6 +11,8 @@ import SwiftUI
 /// Supported blockchain networks with their BIP-44 derivation paths
 /// Reference: https://support.atomicwallet.io/article/146-list-of-derivation-paths
 enum BlockchainNetwork: String, CaseIterable, Identifiable, Codable {
+    // Sur is the protocol's own chain and the primary network — listed first.
+    case sur = "sur"
     case ethereum = "ethereum"
     case bitcoin = "bitcoin"
     case bsc = "bsc"
@@ -19,12 +21,14 @@ enum BlockchainNetwork: String, CaseIterable, Identifiable, Codable {
     case solana = "solana"
     case originTrail = "origintrail"
     case world = "world"
-    
+
     var id: String { rawValue }
-    
+
     /// Display name for the network
     var displayName: String {
         switch self {
+        case .sur:
+            return "Sur"
         case .ethereum:
             return "Ethereum"
         case .bitcoin:
@@ -43,10 +47,12 @@ enum BlockchainNetwork: String, CaseIterable, Identifiable, Codable {
             return "World"
         }
     }
-    
+
     /// Network symbol/ticker
     var symbol: String {
         switch self {
+        case .sur:
+            return "SUR"
         case .ethereum:
             return "ETH"
         case .bitcoin:
@@ -65,7 +71,7 @@ enum BlockchainNetwork: String, CaseIterable, Identifiable, Codable {
             return "WLD"
         }
     }
-    
+
     /// BIP-44 coin type (hardened)
     /// Reference: https://github.com/satoshilabs/slips/blob/master/slip-0044.md
     var coinType: UInt32 {
@@ -78,8 +84,8 @@ enum BlockchainNetwork: String, CaseIterable, Identifiable, Codable {
             return 60      // BSC uses same as Ethereum (EVM compatible)
         case .tron:
             return 195     // m/44'/195'/...
-        case .cosmos:
-            return 118     // m/44'/118'/...
+        case .cosmos, .sur:
+            return 118     // m/44'/118'/... (Sur is a Cosmos SDK chain)
         case .solana:
             return 501     // m/44'/501'/...
         case .originTrail:
@@ -88,7 +94,7 @@ enum BlockchainNetwork: String, CaseIterable, Identifiable, Codable {
             return 60      // World uses same as Ethereum (EVM compatible)
         }
     }
-    
+
     /// Full BIP-44/BIP-84 derivation path
     /// Format: m / purpose' / coin_type' / account' / change / address_index
     var derivationPath: String {
@@ -101,8 +107,8 @@ enum BlockchainNetwork: String, CaseIterable, Identifiable, Codable {
             return "m/44'/60'/0'/0/0"  // Same as Ethereum (EVM compatible)
         case .tron:
             return "m/44'/195'/0'/0/0"
-        case .cosmos:
-            return "m/44'/118'/0'/0/0"
+        case .cosmos, .sur:
+            return "m/44'/118'/0'/0/0"  // Sur shares the Cosmos derivation path
         case .solana:
             return "m/44'/501'/0'/0'"  // Solana uses hardened at all levels
         case .originTrail:
@@ -111,10 +117,12 @@ enum BlockchainNetwork: String, CaseIterable, Identifiable, Codable {
             return "m/44'/60'/0'/0/0"  // Same as Ethereum (EVM compatible)
         }
     }
-    
+
     /// Chain icon (SF Symbol name)
     var iconName: String {
         switch self {
+        case .sur:
+            return "checkmark.seal.fill"
         case .ethereum:
             return "e.circle.fill"
         case .bitcoin:
@@ -133,10 +141,12 @@ enum BlockchainNetwork: String, CaseIterable, Identifiable, Codable {
             return "globe.americas.fill"
         }
     }
-    
+
     /// Chain color for UI
     var color: Color {
         switch self {
+        case .sur:
+            return Color(red: 0.95, green: 0.55, blue: 0.15)  // Sur orange (brand accent)
         case .ethereum:
             return Color(red: 0.39, green: 0.45, blue: 0.95)  // Ethereum blue
         case .bitcoin:
@@ -155,7 +165,7 @@ enum BlockchainNetwork: String, CaseIterable, Identifiable, Codable {
             return Color(red: 0.00, green: 0.00, blue: 0.00)  // World black
         }
     }
-    
+
     /// Address prefix (for display/validation)
     var addressPrefix: String {
         switch self {
@@ -167,26 +177,28 @@ enum BlockchainNetwork: String, CaseIterable, Identifiable, Codable {
             return "T"  // Tron addresses start with T
         case .cosmos:
             return "cosmos"
+        case .sur:
+            return "sur"
         case .solana:
             return ""  // Solana uses base58 addresses
         }
     }
-    
+
     /// Whether this network uses the secp256k1 curve
     var usesSecp256k1: Bool {
         switch self {
-        case .ethereum, .bitcoin, .cosmos, .originTrail, .bsc, .tron, .world:
+        case .ethereum, .bitcoin, .cosmos, .sur, .originTrail, .bsc, .tron, .world:
             return true
         case .solana:
             return false  // Solana uses Ed25519
         }
     }
-    
+
     /// Derivation path components as array of indices
     /// Hardened indices have 0x80000000 added
     var pathComponents: [UInt32] {
         let hardenedOffset: UInt32 = 0x80000000
-        
+
         switch self {
         case .ethereum, .originTrail, .bsc, .world:
             return [
@@ -212,10 +224,10 @@ enum BlockchainNetwork: String, CaseIterable, Identifiable, Codable {
                 0,                        // change (not hardened)
                 0                         // address_index (not hardened)
             ]
-        case .cosmos:
+        case .cosmos, .sur:
             return [
                 44 + hardenedOffset,     // purpose (hardened)
-                118 + hardenedOffset,    // coin_type (hardened)
+                118 + hardenedOffset,    // coin_type (hardened) - Sur shares Cosmos's path
                 0 + hardenedOffset,      // account (hardened)
                 0,                        // change (not hardened)
                 0                         // address_index (not hardened)
@@ -234,17 +246,17 @@ enum BlockchainNetwork: String, CaseIterable, Identifiable, Codable {
 /// Storage key for selected network
 extension BlockchainNetwork {
     static let selectedNetworkKey = "selectedBlockchainNetwork"
-    
+
     /// Save selected network to UserDefaults
     static func saveSelected(_ network: BlockchainNetwork) {
         UserDefaults.standard.set(network.rawValue, forKey: selectedNetworkKey)
     }
-    
-    /// Load selected network from UserDefaults (defaults to Ethereum)
+
+    /// Load selected network from UserDefaults (defaults to Sur, the primary network)
     static func loadSelected() -> BlockchainNetwork {
         guard let rawValue = UserDefaults.standard.string(forKey: selectedNetworkKey),
               let network = BlockchainNetwork(rawValue: rawValue) else {
-            return .ethereum
+            return .sur
         }
         return network
     }

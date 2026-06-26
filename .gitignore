@@ -1,1 +1,7 @@
 swift-secp256k1-*
+
+# Go XCFramework build artifacts (regenerate with `make xcframework`)
+surcorelibs/build/
+# Xcode per-user state
+**/xcuserdata/
+.DS_Store

@@ -70,31 +70,75 @@ public struct SignedKeystroke: Codable, Equatable {
 public struct KeystrokeSession: Codable, Equatable {
     /// Unique identifier for this session
     public let sessionId: String
-    
+
     /// Start timestamp of the session
     public let startTimestamp: Int64
-    
+
     /// End timestamp of the session (set when finalized)
     public var endTimestamp: Int64?
-    
+
     /// All signed keystrokes in this session
     public var signedKeystrokes: [SignedKeystroke]
-    
+
     /// Hash of the entire session log
     public var sessionHash: String?
-    
-    /// Human typing evaluation percentage (0-100)
+
+    /// Human typing evaluation percentage (0-100) — computed locally, not sent on-chain
     public var humanTypingScore: Double?
-    
+
     /// Zero-knowledge proof of typing
     public var zkProof: ZKTypingProof?
-    
+
     /// User's public key used for signing (hex)
     public let userPublicKey: String
-    
+
     /// Device's public key used for signing (hex)
     public let devicePublicKey: String
-    
+
+    // MARK: - Identity Layer Fields (ZK circuit private inputs)
+    // Populated by AuthenticationManager once the user has a registered Cosmos identity.
+    // Stored locally so the prover can reconstruct inputs across app launches.
+    // These are private witnesses — never sent as public on-chain data.
+
+    /// Poseidon(username_bytes) over BN254 — fed into the gnark circuit as a public input.
+    public var usernameHash: String?
+
+    /// P-256 Secure Enclave device public key X coordinate (hex, reduced mod BN254 r).
+    public var devicePubkeyX: String?
+
+    /// P-256 Secure Enclave device public key Y coordinate (hex, reduced mod BN254 r).
+    public var devicePubkeyY: String?
+
+    /// Monotonically increasing per-device session counter (prevents nullifier reuse).
+    public var sessionCounter: UInt64?
+
+    /// Root of the device commitment Merkle tree (fetched from Cosmos x/identity).
+    public var commitmentRoot: String?
+
+    /// Merkle inclusion proof — sibling hashes at each level (8 elements for depth-8 tree).
+    public var merklePath: [String]?
+
+    /// Merkle path direction bits (0 = leaf is left child, 1 = right child).
+    public var merkleDirections: [Int]?
+
+    /// Secure Enclave ECDSA signature R over the session bundle (used as circuit witness).
+    public var seSignatureR: String?
+
+    /// Secure Enclave ECDSA signature S over the session bundle.
+    public var seSignatureS: String?
+
+    /// Private behavioral witness — populated when ZK proof is generated, NOT serialized on-chain.
+    /// Excluded from Codable so it is never persisted or transmitted as public data.
+    public var behavioralWitness: ZKBehavioralWitness?
+
+    // Exclude behavioralWitness from Codable (it is always recomputed, never stored)
+    private enum CodingKeys: String, CodingKey {
+        case sessionId, startTimestamp, endTimestamp, signedKeystrokes
+        case sessionHash, humanTypingScore, zkProof, userPublicKey, devicePublicKey
+        case usernameHash, devicePubkeyX, devicePubkeyY, sessionCounter
+        case commitmentRoot, merklePath, merkleDirections, seSignatureR, seSignatureS
+    }
+
     public init(
         sessionId: String,
         startTimestamp: Int64,
@@ -110,6 +154,16 @@ public struct KeystrokeSession: Codable, Equatable {
         self.sessionHash = nil
         self.humanTypingScore = nil
         self.zkProof = nil
+        self.behavioralWitness = nil
+        self.usernameHash = nil
+        self.devicePubkeyX = nil
+        self.devicePubkeyY = nil
+        self.sessionCounter = nil
+        self.commitmentRoot = nil
+        self.merklePath = nil
+        self.merkleDirections = nil
+        self.seSignatureR = nil
+        self.seSignatureS = nil
     }
     
     /// Compute the hash of all signed keystrokes in this session
@@ -157,6 +211,34 @@ public struct KeystrokeSession: Codable, Equatable {
     }
 }
 
+// MARK: - KeystrokeSession Equatable
+
+// behavioralWitness is excluded from equality — it is a transient value
+// recomputed during proof generation and excluded from Codable.
+// Two sessions are equal when all their persisted (Codable) fields match.
+extension KeystrokeSession {
+    public static func == (lhs: KeystrokeSession, rhs: KeystrokeSession) -> Bool {
+        lhs.sessionId          == rhs.sessionId          &&
+        lhs.startTimestamp     == rhs.startTimestamp     &&
+        lhs.endTimestamp       == rhs.endTimestamp       &&
+        lhs.signedKeystrokes   == rhs.signedKeystrokes   &&
+        lhs.sessionHash        == rhs.sessionHash        &&
+        lhs.humanTypingScore   == rhs.humanTypingScore   &&
+        lhs.zkProof            == rhs.zkProof            &&
+        lhs.userPublicKey      == rhs.userPublicKey      &&
+        lhs.devicePublicKey    == rhs.devicePublicKey    &&
+        lhs.usernameHash       == rhs.usernameHash       &&
+        lhs.devicePubkeyX      == rhs.devicePubkeyX     &&
+        lhs.devicePubkeyY      == rhs.devicePubkeyY     &&
+        lhs.sessionCounter     == rhs.sessionCounter     &&
+        lhs.commitmentRoot     == rhs.commitmentRoot     &&
+        lhs.merklePath         == rhs.merklePath         &&
+        lhs.merkleDirections   == rhs.merkleDirections   &&
+        lhs.seSignatureR       == rhs.seSignatureR       &&
+        lhs.seSignatureS       == rhs.seSignatureS
+    }
+}
+
 // MARK: - Zero Knowledge Proof Structure
 
 /// Non-interactive zero-knowledge proof of human typing (SNARK-style)
@@ -199,104 +281,84 @@ public struct ZKTypingProof: Codable, Equatable {
     }
     
     // MARK: - Backward Compatibility
-    
+
     /// Backward compatibility: challenge maps to nullifier
     public var challenge: String { nullifier }
-    
+
     /// Backward compatibility: response maps to proof
     public var response: String { proof }
-    
-    // MARK: - Remix/Solidity Format
-    
-    /// Generate the proof formatted for Remix IDE tuple input
-    /// This creates a format that can be directly pasted into Remix's verifyProof function
-    public func toRemixFormat() -> String {
-        // Ensure commitment has 0x prefix and is 32 bytes (64 hex chars)
-        let commitmentHex = commitment.hasPrefix("0x") ? commitment : "0x" + commitment
-        let nullifierHex = nullifier.hasPrefix("0x") ? nullifier : "0x" + nullifier
-        let proofHex = proof.hasPrefix("0x") ? proof : "0x" + proof
-        let sessionHashHex = publicInputs.sessionHash.hasPrefix("0x") ? publicInputs.sessionHash : "0x" + publicInputs.sessionHash
-        
-        // Convert public keys to hex bytes (add 0x if needed)
-        let userPubKeyHex = publicInputs.userPublicKey.hasPrefix("0x") ? publicInputs.userPublicKey : "0x" + publicInputs.userPublicKey
-        let devicePubKeyHex = publicInputs.devicePublicKey.hasPrefix("0x") ? publicInputs.devicePublicKey : "0x" + publicInputs.devicePublicKey
-        
-        // IEEE 754 double bit pattern for humanTypingScore (big-endian)
-        let scoreBits = publicInputs.humanTypingScore.bitPattern.bigEndian
-        let scoreBitsHex = String(format: "0x%016llx", scoreBits)
-        
-        // Remix expects: [commitment, nullifier, proof, sessionHash, keystrokeCount, typingDuration, userPublicKey, devicePublicKey, humanTypingScore, humanTypingScoreBits, generatedAt]
-        return """
-        ["\(commitmentHex)", "\(nullifierHex)", "\(proofHex)", "\(sessionHashHex)", \(publicInputs.keystrokeCount), \(publicInputs.typingDuration), "\(userPubKeyHex)", "\(devicePubKeyHex)", \(Int(publicInputs.humanTypingScore)), "\(scoreBitsHex)", \(generatedAt)]
-        """
-    }
-    
-    /// Generate the proof as a detailed formatted string showing all fields
-    public func toDetailedRemixFormat() -> String {
-        let commitmentHex = commitment.hasPrefix("0x") ? commitment : "0x" + commitment
-        let nullifierHex = nullifier.hasPrefix("0x") ? nullifier : "0x" + nullifier
-        let proofHex = proof.hasPrefix("0x") ? proof : "0x" + proof
-        let sessionHashHex = publicInputs.sessionHash.hasPrefix("0x") ? publicInputs.sessionHash : "0x" + publicInputs.sessionHash
-        let userPubKeyHex = publicInputs.userPublicKey.hasPrefix("0x") ? publicInputs.userPublicKey : "0x" + publicInputs.userPublicKey
-        let devicePubKeyHex = publicInputs.devicePublicKey.hasPrefix("0x") ? publicInputs.devicePublicKey : "0x" + publicInputs.devicePublicKey
-        let scoreBits = publicInputs.humanTypingScore.bitPattern.bigEndian
-        let scoreBitsHex = String(format: "0x%016llx", scoreBits)
-        
-        return """
-        // Remix Input Format for verifyProof(SNARKProof)
-        // Paste this entire tuple into Remix:
-        
-        [
-          "\(commitmentHex)",           // commitment (bytes32)
-          "\(nullifierHex)",            // nullifier (bytes32)
-          "\(proofHex)",                // proof (bytes32)
-          "\(sessionHashHex)",          // sessionHash (bytes32)
-          \(publicInputs.keystrokeCount),                           // keystrokeCount (uint256)
-          \(publicInputs.typingDuration),                           // typingDuration (uint256)
-          "\(userPubKeyHex)",           // userPublicKey (bytes)
-          "\(devicePubKeyHex)",         // devicePublicKey (bytes)
-          \(Int(publicInputs.humanTypingScore)),                    // humanTypingScore (uint256)
-          "\(scoreBitsHex)",            // humanTypingScoreBits (bytes8)
-          \(generatedAt)                // generatedAt (uint256)
+
+    // MARK: - gnark Verifier Format
+
+    /// Returns the 5 public inputs as hex strings in the order the gnark verifier expects:
+    /// [usernameHash, contentHashLo, contentHashHi, nullifier, commitmentRoot]
+    public func publicInputsArray() -> [String] {
+        return [
+            publicInputs.usernameHash,
+            publicInputs.contentHashLo,
+            publicInputs.contentHashHi,
+            publicInputs.nullifier,
+            publicInputs.commitmentRoot
         ]
-        """
     }
 }
 
-/// Public inputs for ZK proof verification
+/// Public inputs for gnark Groth16 proof verification.
+/// These are the ONLY values revealed to the verifier.
+/// All behavioral statistics (WPM, IKI, typing score) remain private witnesses.
 public struct ZKPublicInputs: Codable, Equatable {
-    /// Hash of the session log
-    public let sessionHash: String
-    
-    /// Number of keystrokes in the session
-    public let keystrokeCount: Int
-    
-    /// Duration of typing session in milliseconds
-    public let typingDuration: Int64
-    
-    /// User's public key (for signature verification)
-    public let userPublicKey: String
-    
-    /// Device's public key (for signature verification)
-    public let devicePublicKey: String
-    
-    /// Human typing score (0-100)
-    public let humanTypingScore: Double
-    
+    /// Poseidon(username_utf8_bytes) over BN254 — identifies the user account
+    public let usernameHash: String
+
+    /// Low 128 bits of Poseidon(content) — content binding
+    public let contentHashLo: String
+
+    /// High 128 bits of Poseidon(content) — content binding
+    public let contentHashHi: String
+
+    /// Poseidon(usernameHash, sessionCounter, blindingFactor) — prevents double-use
+    public let nullifier: String
+
+    /// Root of the device commitment Merkle tree
+    public let commitmentRoot: String
+
     public init(
-        sessionHash: String,
-        keystrokeCount: Int,
-        typingDuration: Int64,
-        userPublicKey: String,
-        devicePublicKey: String,
-        humanTypingScore: Double
+        usernameHash: String,
+        contentHashLo: String,
+        contentHashHi: String,
+        nullifier: String,
+        commitmentRoot: String
     ) {
-        self.sessionHash = sessionHash
+        self.usernameHash = usernameHash
+        self.contentHashLo = contentHashLo
+        self.contentHashHi = contentHashHi
+        self.nullifier = nullifier
+        self.commitmentRoot = commitmentRoot
+    }
+}
+
+/// Private witness data for ZK circuit — never leaves the device as public data.
+/// The circuit proves these constraints are satisfied without revealing the values.
+public struct ZKBehavioralWitness {
+    /// Human typing score 0–100 (circuit enforces >= 50)
+    public let humanScore: Int
+    /// IKI values in milliseconds (circuit enforces 20ms–2000ms range)
+    public let ikiValuesMs: [Int]
+    /// Number of keystrokes (circuit enforces >= 10)
+    public let keystrokeCount: Int
+    /// Typing duration in ms (derived from IKI values — not separately constrained)
+    public let typingDurationMs: Int64
+
+    public init(
+        humanScore: Int,
+        ikiValuesMs: [Int],
+        keystrokeCount: Int,
+        typingDurationMs: Int64
+    ) {
+        self.humanScore = humanScore
+        self.ikiValuesMs = ikiValuesMs
         self.keystrokeCount = keystrokeCount
-        self.typingDuration = typingDuration
-        self.userPublicKey = userPublicKey
-        self.devicePublicKey = devicePublicKey
-        self.humanTypingScore = humanTypingScore
+        self.typingDurationMs = typingDurationMs
     }
 }
 
