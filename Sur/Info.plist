@@ -4,5 +4,28 @@
 <dict>
 	<key>NSFaceIDUsageDescription</key>
 	<string>Sur uses Face ID to securely access your wallet and protect your private keys.</string>
+	<!-- Allow plaintext HTTP to local/LAN endpoints (e.g. a local `ignite chain serve`
+	     at http://localhost:1317). Remote networks (devnet/testnet/mainnet) use HTTPS. -->
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+		<!-- DEV ONLY: allows cleartext HTTP to a local chain on a LAN IP
+		     (e.g. http://192.168.x.x:1317) from a physical device, which
+		     NSAllowsLocalNetworking alone does not permit. Remove or replace
+		     with specific NSExceptionDomains before shipping. -->
+		<key>NSAllowsArbitraryLoads</key>
+		<true/>
+	</dict>
+	<!-- Background processing: finish pending on-chain attestations without the
+	     app being actively used (BGProcessingTask + short background window). -->
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>processing</string>
+	</array>
+	<key>BGTaskSchedulerPermittedIdentifiers</key>
+	<array>
+		<string>com.ordo.sur.attest.flush</string>
+	</array>
 </dict>
 </plist>

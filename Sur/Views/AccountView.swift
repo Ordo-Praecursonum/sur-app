@@ -14,20 +14,19 @@ struct AccountView: View {
     // MARK: - Properties
     
     @EnvironmentObject private var authManager: AuthenticationManager
+    @StateObject private var identity = SurChainIdentityManager.shared
     @State private var showRecoveryPhrase = false
     @State private var showDeleteConfirmation = false
     @State private var showCopiedToast = false
     @State private var showNetworkSelector = false
+    @State private var showRegister = false
+    /// Whether we've already offered device registration once after onboarding.
+    /// The persistent banner handles all later reminders.
+    @AppStorage("sur.onboarding.registrationPrompted") private var registrationPrompted = false
     @State private var recoveryPhrase: String?
     @State private var isLoadingPhrase = false
     @State private var showError = false
     @State private var errorMessage: String?
-    @State private var showSignMessageDialog = false
-    @State private var messageToSign = ""
-    @State private var signedSignature: String?
-    @State private var signedSignatureDER: String?
-    @State private var messageHash: String?
-    @State private var showSignatureResult = false
     
     // MARK: - Body
     
@@ -97,56 +96,64 @@ struct AccountView: View {
                             }
                         }
                         
-                        // Device Public Key
-                        if let devicePublicKey = authManager.devicePublicKey {
-                            Divider()
-                                .padding(.vertical, 8)
-                            
-                            VStack(spacing: 8) {
-                                Text("Device Public Key")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                                
-                                Text(authManager.shortDevicePublicKey ?? DeviceIDManager.shortenDevicePublicKey(devicePublicKey))
-                                    .font(.system(.caption, design: .monospaced))
-                                    .multilineTextAlignment(.center)
-                                    .foregroundColor(.primary)
-                                
-                                // Copy button with orange accent
-                                Button(action: { copyDevicePublicKey(devicePublicKey) }) {
-                                    HStack(spacing: 4) {
-                                        Image(systemName: "doc.on.doc")
-                                        Text("Copy Device Key")
-                                    }
-                                    .font(.caption)
-                                    .foregroundColor(.orange)
-                                }
-                                .buttonStyle(.plain)
-                                
-                                // Sign message button with orange accent
-                                Button(action: { showSignMessageDialog = true }) {
-                                    HStack(spacing: 4) {
-                                        Image(systemName: "signature")
-                                        Text("Sign a Message")
-                                    }
-                                    .font(.caption)
-                                    .foregroundColor(.orange)
-                                }
-                                .buttonStyle(.plain)
-                                .accessibilityLabel("Sign a message with device private key")
-                            }
-                        }
                     }
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 16)
                 }
-                
+
+                // Prompt to register this device as a provenance source if it isn't yet.
+                if identity.registeredUsername == nil {
+                    Section {
+                        Button {
+                            showRegister = true
+                        } label: {
+                            HStack(spacing: 12) {
+                                Image(systemName: "exclamationmark.shield.fill")
+                                    .font(.title3)
+                                    .foregroundColor(.orange)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("Device not registered")
+                                        .font(.subheadline).fontWeight(.semibold)
+                                        .foregroundColor(.primary)
+                                    Text("Register this device to attest content on the Sur Chain.")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                }
+                                Spacer()
+                                Text("Register")
+                                    .font(.caption).fontWeight(.semibold)
+                                    .foregroundColor(.orange)
+                            }
+                            .padding(.vertical, 4)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+
+                // Sur Chain Section — identity, balance, network (the operational core)
+                Section {
+                    NavigationLink {
+                        SurChainSettingsView()
+                    } label: {
+                        Label("Sur Chain", systemImage: "link")
+                    }
+                    NavigationLink {
+                        AttestationsView()
+                    } label: {
+                        Label("Content Attestations", systemImage: "checkmark.seal")
+                    }
+                } header: {
+                    Text("Provenance Network")
+                } footer: {
+                    Text("Register this device, choose the network, view your balance, and attest content on-chain.")
+                }
+
                 // Security Section
                 Section {
                     HStack {
                         Label("Security", systemImage: "lock.shield")
                         Spacer()
-                        Text(authManager.isBiometricEnabled ? 
+                        Text(authManager.isBiometricEnabled ?
                              authManager.biometricType.displayName : "None")
                             .foregroundColor(.secondary)
                     }
@@ -218,6 +225,12 @@ struct AccountView: View {
             }
             .navigationTitle("Sur Keyboard")
             .tint(.orange)
+            .task {
+                offerRegistrationIfNeeded()
+                // Submit any keyboard sessions queued for attestation as soon as the
+                // app is open (the keyboard can't reach the chain itself).
+                TextAttestationStore.shared.autoAttest(sessions: KeystrokeLogManager.shared.loadAllSessions())
+            }
             .overlay {
                 if showCopiedToast {
                     VStack {
@@ -247,28 +260,8 @@ struct AccountView: View {
                     loadPhrase: loadRecoveryPhrase
                 )
             }
-            .sheet(isPresented: $showSignMessageDialog) {
-                SignMessageSheet(
-                    isPresented: $showSignMessageDialog,
-                    messageToSign: $messageToSign,
-                    onSign: signMessage
-                )
-            }
-            .sheet(isPresented: $showSignatureResult) {
-                SignatureResultSheet(
-                    isPresented: $showSignatureResult,
-                    signature: signedSignature ?? "",
-                    signatureDER: signedSignatureDER,
-                    message: messageToSign,
-                    messageHash: messageHash ?? ""
-                )
-            }
-            .onChange(of: showSignatureResult) { _, newValue in
-                if !newValue {
-                    // Clear sensitive data when sheet is dismissed
-                    messageToSign = ""
-                    signedSignature = nil
-                }
+            .sheet(isPresented: $showRegister) {
+                DeviceRegistrationView()
             }
             .alert("Delete Wallet", isPresented: $showDeleteConfirmation) {
                 Button("Cancel", role: .cancel) { }
@@ -289,7 +282,7 @@ struct AccountView: View {
     // MARK: - Actions
     
     private func copyAddress(_ address: String) {
-        UIPasteboard.general.string = address
+        Pasteboard.copy(address)
         
         withAnimation {
             showCopiedToast = true
@@ -302,24 +295,22 @@ struct AccountView: View {
         }
     }
     
-    private func copyDevicePublicKey(_ devicePublicKey: Data) {
-        let publicKeyHex = devicePublicKey.map { String(format: "%02x", $0) }.joined()
-        UIPasteboard.general.string = publicKeyHex
-        
-        withAnimation {
-            showCopiedToast = true
-        }
-        
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-            withAnimation {
-                showCopiedToast = false
-            }
+    /// Offer device registration once, right after the wallet is set up. If the
+    /// device isn't a registered provenance source yet, present the registration
+    /// sheet a single time; the banner on this screen handles later reminders, so
+    /// the user can always "do it later".
+    private func offerRegistrationIfNeeded() {
+        guard !registrationPrompted, identity.registeredUsername == nil else { return }
+        registrationPrompted = true
+        // Present after the view settles so it doesn't fight the navigation animation.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            if identity.registeredUsername == nil { showRegister = true }
         }
     }
-    
+
     private func loadRecoveryPhrase() {
         isLoadingPhrase = true
-        
+
         Task {
             do {
                 let phrase = try await authManager.getMnemonic()
@@ -338,429 +329,6 @@ struct AccountView: View {
         }
     }
     
-    private func signMessage() {
-        guard !messageToSign.isEmpty else {
-            errorMessage = "Please enter a message to sign"
-            showError = true
-            return
-        }
-        
-        guard let devicePrivateKey = DeviceIDManager.shared.getStoredDevicePrivateKey() else {
-            errorMessage = "Device private key not found"
-            showError = true
-            return
-        }
-        
-        // Hash the message using SHA-256 (standard practice for ECDSA signing)
-        guard let messageData = messageToSign.data(using: .utf8) else {
-            errorMessage = "Failed to encode message"
-            showError = true
-            return
-        }
-        
-        let messageHash = SHA256.hash(data: messageData)
-        let messageHashData = Data(messageHash)
-        
-        // Store the message hash as hex for display
-        let messageHashHex = messageHashData.map { String(format: "%02x", $0) }.joined()
-        self.messageHash = messageHashHex
-        
-        // Sign the message hash with device private key
-        guard let signature = Secp256k1.sign(messageHash: messageHashData, with: devicePrivateKey) else {
-            errorMessage = "Failed to sign message"
-            showError = true
-            return
-        }
-        
-        // Convert signature to hex string (compact R+S format)
-        let signatureHex = signature.map { String(format: "%02x", $0) }.joined()
-        signedSignature = signatureHex
-        
-        // Also convert to DER format for external tool compatibility
-        if let derSignature = Secp256k1.convertToDER(signature: signature) {
-            let derHex = derSignature.map { String(format: "%02x", $0) }.joined()
-            signedSignatureDER = derHex
-        } else {
-            // DER conversion failure is non-critical - compact format is still available
-            // External tools that support compact R+S format can still verify the signature
-            #if DEBUG
-            print("[AccountView] DER conversion failed, only compact signature available")
-            #endif
-        }
-        
-        // Close the sign dialog and show the result
-        showSignMessageDialog = false
-        showSignatureResult = true
-    }
-}
-
-// MARK: - Sign Message Sheet
-
-struct SignMessageSheet: View {
-    @Binding var isPresented: Bool
-    @Binding var messageToSign: String
-    let onSign: () -> Void
-    
-    var body: some View {
-        NavigationStack {
-            VStack(spacing: 24) {
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("Enter Message to Sign")
-                        .font(.headline)
-                    
-                    Text("Enter the message you want to sign with your device private key. The message will be hashed using SHA-256 before signing.")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                    
-                    TextEditor(text: $messageToSign)
-                        .font(.body)
-                        .frame(minHeight: 150)
-                        .padding(8)
-                        .background(Color(.systemGray6))
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
-                }
-                .padding()
-                
-                Spacer()
-                
-                Button(action: {
-                    onSign()
-                }) {
-                    Text("Sign Message")
-                        .font(.headline)
-                        .frame(maxWidth: .infinity)
-                        .padding()
-                        .background(
-                            LinearGradient(
-                                colors: [.orange, .red],
-                                startPoint: .leading,
-                                endPoint: .trailing
-                            )
-                        )
-                        .foregroundColor(.white)
-                        .clipShape(RoundedRectangle(cornerRadius: 14))
-                }
-                .padding(.horizontal, 24)
-                .padding(.bottom, 24)
-                .disabled(messageToSign.isEmpty)
-            }
-            .navigationTitle("Sign Message")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Cancel") {
-                        messageToSign = ""
-                        isPresented = false
-                    }
-                    .foregroundColor(.orange)
-                }
-            }
-        }
-    }
-}
-
-// MARK: - Signature Result Sheet
-
-struct SignatureResultSheet: View {
-    @Binding var isPresented: Bool
-    let signature: String
-    let signatureDER: String?
-    let message: String
-    let messageHash: String
-    @State private var showCopied = false
-    @State private var showCopiedDER = false
-    @State private var showPrivateKeyCopied = false
-    @State private var showPublicKeyCopied = false
-    @State private var showHashCopied = false
-    
-    var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(spacing: 24) {
-                    // Success indicator
-                    Image(systemName: "checkmark.seal.fill")
-                        .font(.system(size: 60))
-                        .foregroundStyle(.green)
-                        .padding(.top, 24)
-                    
-                    Text("Message Signed Successfully")
-                        .font(.headline)
-                    
-                    // Signing algorithm info
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text("Signing Algorithm")
-                            .font(.headline)
-                            .foregroundColor(.primary)
-                        
-                        Text("ECDSA on secp256k1 curve")
-                            .font(.body)
-                            .foregroundColor(.secondary)
-                        
-                        Text("Message is hashed using SHA-256, then signed with the device private key using ECDSA (Elliptic Curve Digital Signature Algorithm) on the secp256k1 curve. This is the same algorithm used by Bitcoin and Ethereum.")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                            .padding(.vertical, 4)
-                    }
-                    .padding()
-                    .background(Color(.systemGray6))
-                    .clipShape(RoundedRectangle(cornerRadius: 12))
-                    .padding(.horizontal)
-                    
-                    // Original message
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Original Message")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                        
-                        Text(message)
-                            .font(.system(.body, design: .monospaced))
-                            .padding()
-                            .background(Color(.systemGray6))
-                            .clipShape(RoundedRectangle(cornerRadius: 8))
-                    }
-                    .padding(.horizontal)
-                    
-                    // Message Hash (SHA-256)
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Message Hash (SHA-256)")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                        
-                        Text(messageHash)
-                            .font(.system(.caption, design: .monospaced))
-                            .lineLimit(nil)
-                            .multilineTextAlignment(.leading)
-                            .padding()
-                            .background(Color(.systemGray6))
-                            .clipShape(RoundedRectangle(cornerRadius: 8))
-                        
-                        Button(action: {
-                            UIPasteboard.general.string = messageHash
-                            withAnimation {
-                                showHashCopied = true
-                            }
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-                                withAnimation {
-                                    showHashCopied = false
-                                }
-                            }
-                        }) {
-                            HStack {
-                                Image(systemName: "doc.on.doc")
-                                Text(showHashCopied ? "Copied!" : "Copy Hash")
-                            }
-                            .font(.caption)
-                            .foregroundColor(.orange)
-                        }
-                    }
-                    .padding(.horizontal)
-                    
-                    // Signature (Compact R+S format - 64 bytes)
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Signature - Compact Format (R+S, 64 bytes)")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                        
-                        Text(signature)
-                            .font(.system(.caption, design: .monospaced))
-                            .lineLimit(nil)
-                            .multilineTextAlignment(.leading)
-                            .padding()
-                            .background(Color(.systemGray6))
-                            .clipShape(RoundedRectangle(cornerRadius: 8))
-                        
-                        Button(action: {
-                            UIPasteboard.general.string = signature
-                            withAnimation {
-                                showCopied = true
-                            }
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-                                withAnimation {
-                                    showCopied = false
-                                }
-                            }
-                        }) {
-                            HStack {
-                                Image(systemName: "doc.on.doc")
-                                Text(showCopied ? "Copied!" : "Copy Compact Signature")
-                            }
-                            .font(.caption)
-                            .foregroundColor(.orange)
-                        }
-                    }
-                    .padding(.horizontal)
-                    
-                    // Signature (DER format for external tools)
-                    if let derSig = signatureDER {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("Signature - DER Format (for external tools)")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                            
-                            Text(derSig)
-                                .font(.system(.caption, design: .monospaced))
-                                .lineLimit(nil)
-                                .multilineTextAlignment(.leading)
-                                .padding()
-                                .background(Color(.systemGray6))
-                                .clipShape(RoundedRectangle(cornerRadius: 8))
-                            
-                            Button(action: {
-                                UIPasteboard.general.string = derSig
-                                withAnimation {
-                                    showCopiedDER = true
-                                }
-                                DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-                                    withAnimation {
-                                        showCopiedDER = false
-                                    }
-                                }
-                            }) {
-                                HStack {
-                                    Image(systemName: "doc.on.doc")
-                                    Text(showCopiedDER ? "Copied!" : "Copy DER Signature")
-                                }
-                                .font(.caption)
-                                .foregroundColor(.orange)
-                            }
-                            
-                            Text("⚠️ Important: When using external tools, enter the ORIGINAL MESSAGE (not the hash) in the Input field. The tool will hash it automatically.")
-                                .font(.caption2)
-                                .foregroundColor(.orange)
-                                .fontWeight(.semibold)
-                                .padding(.top, 4)
-                            
-                            // Verification guide
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text("External Tool Verification Steps:")
-                                    .font(.caption2)
-                                    .fontWeight(.semibold)
-                                    .foregroundColor(.secondary)
-                                    .padding(.top, 8)
-                                
-                                Text("1. Input: Enter '\(message)' (the message text, NOT the hash)")
-                                    .font(.caption2)
-                                    .foregroundColor(.secondary)
-                                
-                                Text("2. Curve: Select secp256k1")
-                                    .font(.caption2)
-                                    .foregroundColor(.secondary)
-                                
-                                Text("3. Hash: Select SHA-256")
-                                    .font(.caption2)
-                                    .foregroundColor(.secondary)
-                                
-                                Text("4. Public Key: Use the uncompressed public key below")
-                                    .font(.caption2)
-                                    .foregroundColor(.secondary)
-                                
-                                Text("5. Signature: Use the DER format signature above")
-                                    .font(.caption2)
-                                    .foregroundColor(.secondary)
-                            }
-                            .padding(.top, 4)
-                        }
-                        .padding(.horizontal)
-                    }
-                    
-                    // Device Public Key
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Device Public Key (For Verification)")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                        
-                        if let devicePublicKey = DeviceIDManager.shared.getStoredDevicePublicKey() {
-                            let publicKeyHex = devicePublicKey.map { String(format: "%02x", $0) }.joined()
-                            
-                            Text(publicKeyHex)
-                                .font(.system(.caption, design: .monospaced))
-                                .lineLimit(nil)
-                                .multilineTextAlignment(.leading)
-                                .padding()
-                                .background(Color(.systemGray6))
-                                .clipShape(RoundedRectangle(cornerRadius: 8))
-                            
-                            Button(action: {
-                                UIPasteboard.general.string = publicKeyHex
-                                withAnimation {
-                                    showPublicKeyCopied = true
-                                }
-                                DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-                                    withAnimation {
-                                        showPublicKeyCopied = false
-                                    }
-                                }
-                            }) {
-                                HStack {
-                                    Image(systemName: "doc.on.doc")
-                                    Text(showPublicKeyCopied ? "Copied!" : "Copy Public Key")
-                                }
-                                .font(.caption)
-                                .foregroundColor(.orange)
-                            }
-                        }
-                    }
-                    .padding(.horizontal)
-                    
-                    // Device Private Key (for testing on external sites)
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Device Private Key (For Testing)")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                        
-                        Text("⚠️ Keep this secret! Only use on trusted verification sites for testing.")
-                            .font(.caption2)
-                            .foregroundColor(.red)
-                            .padding(.vertical, 4)
-                        
-                        if let devicePrivateKey = DeviceIDManager.shared.getStoredDevicePrivateKey() {
-                            let privateKeyHex = devicePrivateKey.map { String(format: "%02x", $0) }.joined()
-                            
-                            Text(privateKeyHex)
-                                .font(.system(.caption, design: .monospaced))
-                                .lineLimit(nil)
-                                .multilineTextAlignment(.leading)
-                                .padding()
-                                .background(Color(.systemGray6))
-                                .clipShape(RoundedRectangle(cornerRadius: 8))
-                            
-                            Button(action: {
-                                UIPasteboard.general.string = privateKeyHex
-                                withAnimation {
-                                    showPrivateKeyCopied = true
-                                }
-                                DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-                                    withAnimation {
-                                        showPrivateKeyCopied = false
-                                    }
-                                }
-                            }) {
-                                HStack {
-                                    Image(systemName: "doc.on.doc")
-                                    Text(showPrivateKeyCopied ? "Copied!" : "Copy Private Key")
-                                }
-                                .font(.caption)
-                                .foregroundColor(.orange)
-                            }
-                        }
-                    }
-                    .padding(.horizontal)
-                    
-                    Spacer()
-                }
-            }
-            .navigationTitle("Signature Result")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Done") {
-                        isPresented = false
-                    }
-                    .foregroundColor(.orange)
-                }
-            }
-        }
-    }
 }
 
 // MARK: - Network Selector Sheet
@@ -887,7 +455,7 @@ struct RecoveryPhraseSheet: View {
                     
                     // Copy button
                     Button(action: {
-                        UIPasteboard.general.string = phrase
+                        Pasteboard.copy(phrase)
                     }) {
                         HStack {
                             Image(systemName: "doc.on.doc")

@@ -1,0 +1,137 @@
+name: iOS CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+jobs:
+  # Job 1: Build and test the Go surcorelibs package
+  surcorelibs-tests:
+    name: surcorelibs Go Tests
+    runs-on: macos-14  # Apple Silicon for arm64 compatibility
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go 1.22
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          cache-dependency-path: surcorelibs/go.sum
+
+      - name: Generate Poseidon constants
+        working-directory: surcorelibs
+        run: go generate ./gnark/
+
+      - name: Run Poseidon tests
+        working-directory: surcorelibs
+        run: go test ./poseidon/... -v -timeout 120s
+
+      - name: Run gnark circuit input validation tests (short — no trusted setup)
+        working-directory: surcorelibs
+        run: go test ./gnark/... -v -short -timeout 60s
+
+      - name: Run FFI bridge build check
+        working-directory: surcorelibs
+        run: go build ./ffi/
+
+  # Job 2: Build the iOS app
+  ios-build:
+    name: iOS Build
+    runs-on: macos-14
+    needs: surcorelibs-tests
+    env:
+      XCODE_PROJECT: Sur.xcodeproj
+      SCHEME: Sur
+      DESTINATION: "platform=iOS Simulator,name=iPhone 16,OS=18.0"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set Xcode version
+        run: sudo xcode-select -s /Applications/Xcode_16.app/Contents/Developer
+
+      - name: Install CocoaPods dependencies
+        run: |
+          gem install cocoapods --no-document
+          pod install
+        working-directory: ${{ github.workspace }}
+        continue-on-error: true  # Podfile may not be fully configured yet
+
+      - name: Build for simulator
+        run: |
+          xcodebuild build \
+            -project "$XCODE_PROJECT" \
+            -scheme "$SCHEME" \
+            -destination "$DESTINATION" \
+            -configuration Debug \
+            CODE_SIGNING_ALLOWED=NO \
+            | xcpretty --color
+        env:
+          XCODE_PROJECT: ${{ env.XCODE_PROJECT }}
+          SCHEME: ${{ env.SCHEME }}
+          DESTINATION: ${{ env.DESTINATION }}
+
+  # Job 3: Run iOS unit tests
+  ios-tests:
+    name: iOS Unit Tests
+    runs-on: macos-14
+    needs: surcorelibs-tests
+    env:
+      XCODE_PROJECT: Sur.xcodeproj
+      SCHEME: Sur
+      DESTINATION: "platform=iOS Simulator,name=iPhone 16,OS=18.0"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set Xcode version
+        run: sudo xcode-select -s /Applications/Xcode_16.app/Contents/Developer
+
+      - name: Install xcpretty
+        run: gem install xcpretty --no-document
+
+      - name: Run unit tests
+        run: |
+          xcodebuild test \
+            -project "$XCODE_PROJECT" \
+            -scheme "SurTests" \
+            -destination "$DESTINATION" \
+            -configuration Debug \
+            CODE_SIGNING_ALLOWED=NO \
+            | xcpretty --color
+        env:
+          XCODE_PROJECT: ${{ env.XCODE_PROJECT }}
+          DESTINATION: ${{ env.DESTINATION }}
+
+  # Job 4: Build XCFramework for Xcode integration (surcorelibs → libsurcorelibs.xcframework)
+  xcframework-build:
+    name: Build surcorelibs XCFramework
+    runs-on: macos-14
+    needs: surcorelibs-tests
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go 1.22
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      - name: Set up Xcode 16
+        run: sudo xcode-select -s /Applications/Xcode_16.app/Contents/Developer
+
+      - name: Generate Poseidon constants
+        working-directory: surcorelibs
+        run: go generate ./gnark/
+
+      - name: Build XCFramework
+        working-directory: surcorelibs
+        run: make xcframework
+        continue-on-error: true  # May fail until full circuit is ready
+
+      - name: Upload XCFramework artifact
+        uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: libsurcorelibs-xcframework
+          path: surcorelibs/build/libsurcorelibs.xcframework
+          retention-days: 7

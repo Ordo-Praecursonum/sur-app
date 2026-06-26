@@ -10,6 +10,7 @@
 		EB558ED92EDF1B74006BE85D /* CryptoSwift in Frameworks */ = {isa = PBXBuildFile; productRef = EB558ED82EDF1B74006BE85D /* CryptoSwift */; };
 		EB558EDC2EDF1C16006BE85D /* P256K in Frameworks */ = {isa = PBXBuildFile; productRef = EB558EDB2EDF1C16006BE85D /* P256K */; };
 		EB558EE02EDF1C16006BE85D /* libsecp256k1 in Frameworks */ = {isa = PBXBuildFile; productRef = EB558EDF2EDF1C16006BE85D /* libsecp256k1 */; };
+		EBBB5CF02FEC5CC800C00122 /* libsurcorelibs.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = EBBB5CA82FEC5C4D00C00122 /* libsurcorelibs.xcframework */; };
 		EBD1989D2E9117070026ED7D /* SurKeyboard.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = EBD198962E9117070026ED7D /* SurKeyboard.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
 
@@ -52,6 +53,155 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		EBBB5C2D2FEC5C4D00C00122 /* amara-diallo.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = "amara-diallo.md"; sourceTree = "<group>"; };
+		EBBB5C2E2FEC5C4D00C00122 /* arjun-nair.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = "arjun-nair.md"; sourceTree = "<group>"; };
+		EBBB5C2F2FEC5C4D00C00122 /* dmitri-vasiliev.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = "dmitri-vasiliev.md"; sourceTree = "<group>"; };
+		EBBB5C302FEC5C4D00C00122 /* isabelle-fontaine.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = "isabelle-fontaine.md"; sourceTree = "<group>"; };
+		EBBB5C312FEC5C4D00C00122 /* kai-oduya.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = "kai-oduya.md"; sourceTree = "<group>"; };
+		EBBB5C322FEC5C4D00C00122 /* lena-kovacs.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = "lena-kovacs.md"; sourceTree = "<group>"; };
+		EBBB5C332FEC5C4D00C00122 /* marcus-webb.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = "marcus-webb.md"; sourceTree = "<group>"; };
+		EBBB5C342FEC5C4D00C00122 /* priya-sundaram.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = "priya-sundaram.md"; sourceTree = "<group>"; };
+		EBBB5C352FEC5C4D00C00122 /* sofia-esposito.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = "sofia-esposito.md"; sourceTree = "<group>"; };
+		EBBB5C362FEC5C4D00C00122 /* yuki-tanaka.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = "yuki-tanaka.md"; sourceTree = "<group>"; };
+		EBBB5C392FEC5C4D00C00122 /* amara-diallo.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = "amara-diallo.md"; sourceTree = "<group>"; };
+		EBBB5C3A2FEC5C4D00C00122 /* arjun-nair.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = "arjun-nair.md"; sourceTree = "<group>"; };
+		EBBB5C3B2FEC5C4D00C00122 /* dmitri-vasiliev.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = "dmitri-vasiliev.md"; sourceTree = "<group>"; };
+		EBBB5C3C2FEC5C4D00C00122 /* isabelle-fontaine.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = "isabelle-fontaine.md"; sourceTree = "<group>"; };
+		EBBB5C3D2FEC5C4D00C00122 /* kai-oduya.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = "kai-oduya.md"; sourceTree = "<group>"; };
+		EBBB5C3E2FEC5C4D00C00122 /* lena-kovacs.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = "lena-kovacs.md"; sourceTree = "<group>"; };
+		EBBB5C3F2FEC5C4D00C00122 /* marcus-webb.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = "marcus-webb.md"; sourceTree = "<group>"; };
+		EBBB5C402FEC5C4D00C00122 /* priya-sundaram.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = "priya-sundaram.md"; sourceTree = "<group>"; };
+		EBBB5C412FEC5C4D00C00122 /* sofia-esposito.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = "sofia-esposito.md"; sourceTree = "<group>"; };
+		EBBB5C422FEC5C4D00C00122 /* yuki-tanaka.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = "yuki-tanaka.md"; sourceTree = "<group>"; };
+		EBBB5C442FEC5C4D00C00122 /* ios-ci.yml */ = {isa = PBXFileReference; lastKnownFileType = text.yaml; path = "ios-ci.yml"; sourceTree = "<group>"; };
+		EBBB5C452FEC5C4D00C00122 /* pr-checks.yml */ = {isa = PBXFileReference; lastKnownFileType = text.yaml; path = "pr-checks.yml"; sourceTree = "<group>"; };
+		EBBB5C462FEC5C4D00C00122 /* README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = "<group>"; };
+		EBBB5C472FEC5C4D00C00122 /* security-scan.yml */ = {isa = PBXFileReference; lastKnownFileType = text.yaml; path = "security-scan.yml"; sourceTree = "<group>"; };
+		EBBB5C4A2FEC5C4D00C00122 /* KeystrokeProofVerifier.sol */ = {isa = PBXFileReference; lastKnownFileType = text; path = KeystrokeProofVerifier.sol; sourceTree = "<group>"; };
+		EBBB5C4C2FEC5C4D00C00122 /* INTEGRATION.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = INTEGRATION.md; sourceTree = "<group>"; };
+		EBBB5C4E2FEC5C4D00C00122 /* community-manager.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = "community-manager.md"; sourceTree = "<group>"; };
+		EBBB5C4F2FEC5C4D00C00122 /* cosmos-engineer.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = "cosmos-engineer.md"; sourceTree = "<group>"; };
+		EBBB5C502FEC5C4D00C00122 /* devops-engineer.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = "devops-engineer.md"; sourceTree = "<group>"; };
+		EBBB5C512FEC5C4D00C00122 /* fullstack-engineer.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = "fullstack-engineer.md"; sourceTree = "<group>"; };
+		EBBB5C522FEC5C4D00C00122 /* ios-engineer.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = "ios-engineer.md"; sourceTree = "<group>"; };
+		EBBB5C532FEC5C4D00C00122 /* mathematician-researcher.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = "mathematician-researcher.md"; sourceTree = "<group>"; };
+		EBBB5C542FEC5C4D00C00122 /* protocol-designer.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = "protocol-designer.md"; sourceTree = "<group>"; };
+		EBBB5C552FEC5C4D00C00122 /* rust-sp1-engineer.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = "rust-sp1-engineer.md"; sourceTree = "<group>"; };
+		EBBB5C562FEC5C4D00C00122 /* security-researcher.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = "security-researcher.md"; sourceTree = "<group>"; };
+		EBBB5C572FEC5C4D00C00122 /* smart-contract-engineer.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = "smart-contract-engineer.md"; sourceTree = "<group>"; };
+		EBBB5C582FEC5C4D00C00122 /* starknet-engineer.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = "starknet-engineer.md"; sourceTree = "<group>"; };
+		EBBB5C592FEC5C4D00C00122 /* TEAM.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = TEAM.md; sourceTree = "<group>"; };
+		EBBB5C5A2FEC5C4D00C00122 /* zk-engineer.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = "zk-engineer.md"; sourceTree = "<group>"; };
+		EBBB5C5C2FEC5C4D00C00122 /* AGENT_ATTESTATION.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = AGENT_ATTESTATION.md; sourceTree = "<group>"; };
+		EBBB5C5D2FEC5C4D00C00122 /* ARCHITECTURE.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = ARCHITECTURE.md; sourceTree = "<group>"; };
+		EBBB5C5E2FEC5C4D00C00122 /* COSMOS_MODULE.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = COSMOS_MODULE.md; sourceTree = "<group>"; };
+		EBBB5C5F2FEC5C4D00C00122 /* IOS_KEYBOARD.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = IOS_KEYBOARD.md; sourceTree = "<group>"; };
+		EBBB5C602FEC5C4D00C00122 /* KEY_MANAGEMENT.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = KEY_MANAGEMENT.md; sourceTree = "<group>"; };
+		EBBB5C612FEC5C4D00C00122 /* L1_SETTLEMENT.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = L1_SETTLEMENT.md; sourceTree = "<group>"; };
+		EBBB5C622FEC5C4D00C00122 /* PRIVACY_MODEL.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = PRIVACY_MODEL.md; sourceTree = "<group>"; };
+		EBBB5C632FEC5C4D00C00122 /* PROOF_FORMAT.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = PROOF_FORMAT.md; sourceTree = "<group>"; };
+		EBBB5C642FEC5C4D00C00122 /* PROVENANCE_CHAIN.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = PROVENANCE_CHAIN.md; sourceTree = "<group>"; };
+		EBBB5C652FEC5C4D00C00122 /* VERIFICATION_GUIDE.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = VERIFICATION_GUIDE.md; sourceTree = "<group>"; };
+		EBBB5C662FEC5C4D00C00122 /* ZK_CIRCUIT.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = ZK_CIRCUIT.md; sourceTree = "<group>"; };
+		EBBB5C682FEC5C4D00C00122 /* .Rhistory */ = {isa = PBXFileReference; lastKnownFileType = text; path = .Rhistory; sourceTree = "<group>"; };
+		EBBB5C692FEC5C4D00C00122 /* ~$Sur_Protocol_Deck.pptx */ = {isa = PBXFileReference; lastKnownFileType = file; path = "~$Sur_Protocol_Deck.pptx"; sourceTree = "<group>"; };
+		EBBB5C6A2FEC5C4D00C00122 /* build_whitepaper.sh */ = {isa = PBXFileReference; lastKnownFileType = text.script.sh; path = build_whitepaper.sh; sourceTree = "<group>"; };
+		EBBB5C6B2FEC5C4D00C00122 /* README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = "<group>"; };
+		EBBB5C6C2FEC5C4D00C00122 /* Sur_Protocol_Whitepaper.pdf */ = {isa = PBXFileReference; lastKnownFileType = image.pdf; path = Sur_Protocol_Whitepaper.pdf; sourceTree = "<group>"; };
+		EBBB5C6D2FEC5C4D00C00122 /* WHITEPAPER.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = WHITEPAPER.md; sourceTree = "<group>"; };
+		EBBB5C6E2FEC5C4D00C00122 /* whitepaper_header.tex */ = {isa = PBXFileReference; lastKnownFileType = text; path = whitepaper_header.tex; sourceTree = "<group>"; };
+		EBBB5C702FEC5C4D00C00122 /* AppAttestManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppAttestManager.swift; sourceTree = "<group>"; };
+		EBBB5C712FEC5C4D00C00122 /* AuthenticationManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthenticationManager.swift; sourceTree = "<group>"; };
+		EBBB5C722FEC5C4D00C00122 /* Bech32.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Bech32.swift; sourceTree = "<group>"; };
+		EBBB5C732FEC5C4D00C00122 /* BiometricAuthManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BiometricAuthManager.swift; sourceTree = "<group>"; };
+		EBBB5C742FEC5C4D00C00122 /* BlockchainNetwork.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlockchainNetwork.swift; sourceTree = "<group>"; };
+		EBBB5C752FEC5C4D00C00122 /* DeviceIDManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceIDManager.swift; sourceTree = "<group>"; };
+		EBBB5C762FEC5C4D00C00122 /* Ed25519.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Ed25519.swift; sourceTree = "<group>"; };
+		EBBB5C772FEC5C4D00C00122 /* EthereumKeyManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EthereumKeyManager.swift; sourceTree = "<group>"; };
+		EBBB5C782FEC5C4D00C00122 /* HumanTypingEvaluator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HumanTypingEvaluator.swift; sourceTree = "<group>"; };
+		EBBB5C792FEC5C4D00C00122 /* Keccak256.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Keccak256.swift; sourceTree = "<group>"; };
+		EBBB5C7A2FEC5C4D00C00122 /* KeystrokeLog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeystrokeLog.swift; sourceTree = "<group>"; };
+		EBBB5C7B2FEC5C4D00C00122 /* KeystrokeLogManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeystrokeLogManager.swift; sourceTree = "<group>"; };
+		EBBB5C7C2FEC5C4D00C00122 /* MnemonicGenerator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MnemonicGenerator.swift; sourceTree = "<group>"; };
+		EBBB5C7D2FEC5C4D00C00122 /* MultiChainKeyManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MultiChainKeyManager.swift; sourceTree = "<group>"; };
+		EBBB5C7E2FEC5C4D00C00122 /* RIPEMD160.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RIPEMD160.swift; sourceTree = "<group>"; };
+		EBBB5C7F2FEC5C4D00C00122 /* Secp256k1.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Secp256k1.swift; sourceTree = "<group>"; };
+		EBBB5C802FEC5C4D00C00122 /* SecureEnclaveManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SecureEnclaveManager.swift; sourceTree = "<group>"; };
+		EBBB5C812FEC5C4D00C00122 /* SurcoreLibsBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SurcoreLibsBridge.swift; sourceTree = "<group>"; };
+		EBBB5C822FEC5C4D00C00122 /* ZKProofGenerator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZKProofGenerator.swift; sourceTree = "<group>"; };
+		EBBB5C842FEC5C4D00C00122 /* CosmosClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CosmosClient.swift; sourceTree = "<group>"; };
+		EBBB5C852FEC5C4D00C00122 /* CosmosTxBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CosmosTxBuilder.swift; sourceTree = "<group>"; };
+		EBBB5C862FEC5C4D00C00122 /* L1Client.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = L1Client.swift; sourceTree = "<group>"; };
+		EBBB5C872FEC5C4D00C00122 /* SurChainIdentityManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SurChainIdentityManager.swift; sourceTree = "<group>"; };
+		EBBB5C882FEC5C4D00C00122 /* SurChainNetwork.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SurChainNetwork.swift; sourceTree = "<group>"; };
+		EBBB5C892FEC5C4D00C00122 /* SurChainSigner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SurChainSigner.swift; sourceTree = "<group>"; };
+		EBBB5C8B2FEC5C4D00C00122 /* AccountView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountView.swift; sourceTree = "<group>"; };
+		EBBB5C8C2FEC5C4D00C00122 /* AuthenticatedView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthenticatedView.swift; sourceTree = "<group>"; };
+		EBBB5C8D2FEC5C4D00C00122 /* CreateWalletView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CreateWalletView.swift; sourceTree = "<group>"; };
+		EBBB5C8E2FEC5C4D00C00122 /* DeviceRegistrationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceRegistrationView.swift; sourceTree = "<group>"; };
+		EBBB5C8F2FEC5C4D00C00122 /* ImportWalletView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImportWalletView.swift; sourceTree = "<group>"; };
+		EBBB5C902FEC5C4D00C00122 /* KeystrokeLogsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeystrokeLogsView.swift; sourceTree = "<group>"; };
+		EBBB5C912FEC5C4D00C00122 /* LockScreenView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LockScreenView.swift; sourceTree = "<group>"; };
+		EBBB5C922FEC5C4D00C00122 /* SurChainSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SurChainSettingsView.swift; sourceTree = "<group>"; };
+		EBBB5C932FEC5C4D00C00122 /* WelcomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WelcomeView.swift; sourceTree = "<group>"; };
+		EBBB5C952FEC5C4D00C00122 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		EBBB5C962FEC5C4D00C00122 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		EBBB5C972FEC5C4D00C00122 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		EBBB5C982FEC5C4D00C00122 /* Sur.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Sur.entitlements; sourceTree = "<group>"; };
+		EBBB5C992FEC5C4D00C00122 /* Sur-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "Sur-Bridging-Header.h"; sourceTree = "<group>"; };
+		EBBB5C9A2FEC5C4D00C00122 /* SurApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SurApp.swift; sourceTree = "<group>"; };
+		EBBB5C9C2FEC5C4D00C00122 /* libsurcorelibs.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = libsurcorelibs.h; sourceTree = "<group>"; };
+		EBBB5C9D2FEC5C4D00C00122 /* module.modulemap */ = {isa = PBXFileReference; lastKnownFileType = "sourcecode.module-map"; path = module.modulemap; sourceTree = "<group>"; };
+		EBBB5C9F2FEC5C4D00C00122 /* libsurcorelibs.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = libsurcorelibs.h; sourceTree = "<group>"; };
+		EBBB5CA02FEC5C4D00C00122 /* libsurcorelibs.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; path = libsurcorelibs.a; sourceTree = "<group>"; };
+		EBBB5CA22FEC5C4D00C00122 /* libsurcorelibs.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = libsurcorelibs.h; sourceTree = "<group>"; };
+		EBBB5CA32FEC5C4D00C00122 /* module.modulemap */ = {isa = PBXFileReference; lastKnownFileType = "sourcecode.module-map"; path = module.modulemap; sourceTree = "<group>"; };
+		EBBB5CA52FEC5C4D00C00122 /* libsurcorelibs.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = libsurcorelibs.h; sourceTree = "<group>"; };
+		EBBB5CA62FEC5C4D00C00122 /* libsurcorelibs.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; path = libsurcorelibs.a; sourceTree = "<group>"; };
+		EBBB5CA82FEC5C4D00C00122 /* libsurcorelibs.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; path = libsurcorelibs.xcframework; sourceTree = "<group>"; };
+		EBBB5CAA2FEC5C4D00C00122 /* main.go */ = {isa = PBXFileReference; lastKnownFileType = text; path = main.go; sourceTree = "<group>"; };
+		EBBB5CAC2FEC5C4D00C00122 /* main.go */ = {isa = PBXFileReference; lastKnownFileType = text; path = main.go; sourceTree = "<group>"; };
+		EBBB5CAE2FEC5C4D00C00122 /* main.go */ = {isa = PBXFileReference; lastKnownFileType = text; path = main.go; sourceTree = "<group>"; };
+		EBBB5CB12FEC5C4D00C00122 /* bridge.go */ = {isa = PBXFileReference; lastKnownFileType = text; path = bridge.go; sourceTree = "<group>"; };
+		EBBB5CB32FEC5C4D00C00122 /* attestation.ccs */ = {isa = PBXFileReference; lastKnownFileType = file; path = attestation.ccs; sourceTree = "<group>"; };
+		EBBB5CB42FEC5C4D00C00122 /* attestation.pk */ = {isa = PBXFileReference; lastKnownFileType = file; path = attestation.pk; sourceTree = "<group>"; };
+		EBBB5CB52FEC5C4D00C00122 /* attestation.vk */ = {isa = PBXFileReference; lastKnownFileType = file; path = attestation.vk; sourceTree = "<group>"; };
+		EBBB5CB62FEC5C4D00C00122 /* attestation_vk.sha256 */ = {isa = PBXFileReference; lastKnownFileType = text; path = attestation_vk.sha256; sourceTree = "<group>"; };
+		EBBB5CB82FEC5C4D00C00122 /* circuit.go */ = {isa = PBXFileReference; lastKnownFileType = text; path = circuit.go; sourceTree = "<group>"; };
+		EBBB5CB92FEC5C4D00C00122 /* commitment_test.go */ = {isa = PBXFileReference; lastKnownFileType = text; path = commitment_test.go; sourceTree = "<group>"; };
+		EBBB5CBA2FEC5C4D00C00122 /* keys.go */ = {isa = PBXFileReference; lastKnownFileType = text; path = keys.go; sourceTree = "<group>"; };
+		EBBB5CBB2FEC5C4D00C00122 /* poseidon_circuit_test.go */ = {isa = PBXFileReference; lastKnownFileType = text; path = poseidon_circuit_test.go; sourceTree = "<group>"; };
+		EBBB5CBC2FEC5C4D00C00122 /* poseidon_constants_gen.go */ = {isa = PBXFileReference; lastKnownFileType = text; path = poseidon_constants_gen.go; sourceTree = "<group>"; };
+		EBBB5CBD2FEC5C4D00C00122 /* poseidon_params.go */ = {isa = PBXFileReference; lastKnownFileType = text; path = poseidon_params.go; sourceTree = "<group>"; };
+		EBBB5CBE2FEC5C4D00C00122 /* prove.go */ = {isa = PBXFileReference; lastKnownFileType = text; path = prove.go; sourceTree = "<group>"; };
+		EBBB5CBF2FEC5C4D00C00122 /* prove_test.go */ = {isa = PBXFileReference; lastKnownFileType = text; path = prove_test.go; sourceTree = "<group>"; };
+		EBBB5CC02FEC5C4D00C00122 /* prove_verify_test.go */ = {isa = PBXFileReference; lastKnownFileType = text; path = prove_verify_test.go; sourceTree = "<group>"; };
+		EBBB5CC12FEC5C4D00C00122 /* publicinputs.go */ = {isa = PBXFileReference; lastKnownFileType = text; path = publicinputs.go; sourceTree = "<group>"; };
+		EBBB5CC22FEC5C4D00C00122 /* verify.go */ = {isa = PBXFileReference; lastKnownFileType = text; path = verify.go; sourceTree = "<group>"; };
+		EBBB5CC42FEC5C4D00C00122 /* poseidon.go */ = {isa = PBXFileReference; lastKnownFileType = text; path = poseidon.go; sourceTree = "<group>"; };
+		EBBB5CC52FEC5C4D00C00122 /* poseidon_test.go */ = {isa = PBXFileReference; lastKnownFileType = text; path = poseidon_test.go; sourceTree = "<group>"; };
+		EBBB5CCF2FEC5C4D00C00122 /* go.mod */ = {isa = PBXFileReference; lastKnownFileType = text; path = go.mod; sourceTree = "<group>"; };
+		EBBB5CD02FEC5C4D00C00122 /* go.sum */ = {isa = PBXFileReference; lastKnownFileType = text; path = go.sum; sourceTree = "<group>"; };
+		EBBB5CD12FEC5C4D00C00122 /* Makefile */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.make; path = Makefile; sourceTree = "<group>"; };
+		EBBB5CD32FEC5C4D00C00122 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		EBBB5CD42FEC5C4D00C00122 /* KeyboardViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardViewController.swift; sourceTree = "<group>"; };
+		EBBB5CD52FEC5C4D00C00122 /* KeystrokeLogger.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeystrokeLogger.swift; sourceTree = "<group>"; };
+		EBBB5CD62FEC5C4D00C00122 /* KeystrokeLogger+Signing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "KeystrokeLogger+Signing.swift"; sourceTree = "<group>"; };
+		EBBB5CD72FEC5C4D00C00122 /* SurKeyboard.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = SurKeyboard.entitlements; sourceTree = "<group>"; };
+		EBBB5CD92FEC5C4D00C00122 /* SurTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SurTests.swift; sourceTree = "<group>"; };
+		EBBB5CDB2FEC5C4D00C00122 /* SurUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SurUITests.swift; sourceTree = "<group>"; };
+		EBBB5CDC2FEC5C4D00C00122 /* SurUITestsLaunchTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SurUITestsLaunchTests.swift; sourceTree = "<group>"; };
+		EBBB5CDE2FEC5C4D00C00122 /* REVIEW.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = REVIEW.md; sourceTree = "<group>"; };
+		EBBB5CDF2FEC5C4D00C00122 /* TASKS-CRITICAL.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = "TASKS-CRITICAL.md"; sourceTree = "<group>"; };
+		EBBB5CE02FEC5C4D00C00122 /* TASKS-HIGH.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = "TASKS-HIGH.md"; sourceTree = "<group>"; };
+		EBBB5CE12FEC5C4D00C00122 /* TASKS-MEDIUM.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = "TASKS-MEDIUM.md"; sourceTree = "<group>"; };
+		EBBB5CE32FEC5C4D00C00122 /* .gitignore */ = {isa = PBXFileReference; lastKnownFileType = text; path = .gitignore; sourceTree = "<group>"; };
+		EBBB5CE42FEC5C4D00C00122 /* BEHAVIORAL_THRESHOLDS.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = BEHAVIORAL_THRESHOLDS.md; sourceTree = "<group>"; };
+		EBBB5CE52FEC5C4D00C00122 /* Podfile */ = {isa = PBXFileReference; lastKnownFileType = text; path = Podfile; sourceTree = "<group>"; };
+		EBBB5CE62FEC5C4D00C00122 /* PROJECT_SCOPE.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = PROJECT_SCOPE.md; sourceTree = "<group>"; };
+		EBBB5CE72FEC5C4D00C00122 /* PROOF_CRYPTOGRAPHY.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = PROOF_CRYPTOGRAPHY.md; sourceTree = "<group>"; };
+		EBBB5CE82FEC5C4D00C00122 /* README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = "<group>"; };
+		EBBB5CE92FEC5C4D00C00122 /* Sur.xcodeproj */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.pb-project"; path = Sur.xcodeproj; sourceTree = "<group>"; };
 		EBD198542E90F8650026ED7D /* Sur.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Sur.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		EBD198612E90F8680026ED7D /* SurTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SurTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		EBD1986B2E90F8680026ED7D /* SurUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SurUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -110,6 +260,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				EB558ED92EDF1B74006BE85D /* CryptoSwift in Frameworks */,
+				EBBB5CF02FEC5CC800C00122 /* libsurcorelibs.xcframework in Frameworks */,
 				EB558EDC2EDF1C16006BE85D /* P256K in Frameworks */,
 				EB558EE02EDF1C16006BE85D /* libsecp256k1 in Frameworks */,
 			);
@@ -142,8 +293,490 @@
 		CB34820E2EDA2F9800F1DD42 /* Frameworks */ = {
 			isa = PBXGroup;
 			children = (
+				EBBB5CEA2FEC5C4D00C00122 /* Sur */,
 			);
 			name = Frameworks;
+			sourceTree = "<group>";
+		};
+		EBBB5C372FEC5C4D00C00122 /* agents */ = {
+			isa = PBXGroup;
+			children = (
+				EBBB5C2D2FEC5C4D00C00122 /* amara-diallo.md */,
+				EBBB5C2E2FEC5C4D00C00122 /* arjun-nair.md */,
+				EBBB5C2F2FEC5C4D00C00122 /* dmitri-vasiliev.md */,
+				EBBB5C302FEC5C4D00C00122 /* isabelle-fontaine.md */,
+				EBBB5C312FEC5C4D00C00122 /* kai-oduya.md */,
+				EBBB5C322FEC5C4D00C00122 /* lena-kovacs.md */,
+				EBBB5C332FEC5C4D00C00122 /* marcus-webb.md */,
+				EBBB5C342FEC5C4D00C00122 /* priya-sundaram.md */,
+				EBBB5C352FEC5C4D00C00122 /* sofia-esposito.md */,
+				EBBB5C362FEC5C4D00C00122 /* yuki-tanaka.md */,
+			);
+			path = agents;
+			sourceTree = "<group>";
+		};
+		EBBB5C382FEC5C4D00C00122 /* .claude */ = {
+			isa = PBXGroup;
+			children = (
+				EBBB5C372FEC5C4D00C00122 /* agents */,
+			);
+			path = .claude;
+			sourceTree = "<group>";
+		};
+		EBBB5C432FEC5C4D00C00122 /* agents */ = {
+			isa = PBXGroup;
+			children = (
+				EBBB5C392FEC5C4D00C00122 /* amara-diallo.md */,
+				EBBB5C3A2FEC5C4D00C00122 /* arjun-nair.md */,
+				EBBB5C3B2FEC5C4D00C00122 /* dmitri-vasiliev.md */,
+				EBBB5C3C2FEC5C4D00C00122 /* isabelle-fontaine.md */,
+				EBBB5C3D2FEC5C4D00C00122 /* kai-oduya.md */,
+				EBBB5C3E2FEC5C4D00C00122 /* lena-kovacs.md */,
+				EBBB5C3F2FEC5C4D00C00122 /* marcus-webb.md */,
+				EBBB5C402FEC5C4D00C00122 /* priya-sundaram.md */,
+				EBBB5C412FEC5C4D00C00122 /* sofia-esposito.md */,
+				EBBB5C422FEC5C4D00C00122 /* yuki-tanaka.md */,
+			);
+			path = agents;
+			sourceTree = "<group>";
+		};
+		EBBB5C482FEC5C4D00C00122 /* workflows */ = {
+			isa = PBXGroup;
+			children = (
+				EBBB5C442FEC5C4D00C00122 /* ios-ci.yml */,
+				EBBB5C452FEC5C4D00C00122 /* pr-checks.yml */,
+				EBBB5C462FEC5C4D00C00122 /* README.md */,
+				EBBB5C472FEC5C4D00C00122 /* security-scan.yml */,
+			);
+			path = workflows;
+			sourceTree = "<group>";
+		};
+		EBBB5C492FEC5C4D00C00122 /* .github */ = {
+			isa = PBXGroup;
+			children = (
+				EBBB5C432FEC5C4D00C00122 /* agents */,
+				EBBB5C482FEC5C4D00C00122 /* workflows */,
+			);
+			path = .github;
+			sourceTree = "<group>";
+		};
+		EBBB5C4B2FEC5C4D00C00122 /* Contracts */ = {
+			isa = PBXGroup;
+			children = (
+				EBBB5C4A2FEC5C4D00C00122 /* KeystrokeProofVerifier.sol */,
+			);
+			path = Contracts;
+			sourceTree = "<group>";
+		};
+		EBBB5C4D2FEC5C4D00C00122 /* docs */ = {
+			isa = PBXGroup;
+			children = (
+				EBBB5C4C2FEC5C4D00C00122 /* INTEGRATION.md */,
+			);
+			path = docs;
+			sourceTree = "<group>";
+		};
+		EBBB5C5B2FEC5C4D00C00122 /* agents */ = {
+			isa = PBXGroup;
+			children = (
+				EBBB5C4E2FEC5C4D00C00122 /* community-manager.md */,
+				EBBB5C4F2FEC5C4D00C00122 /* cosmos-engineer.md */,
+				EBBB5C502FEC5C4D00C00122 /* devops-engineer.md */,
+				EBBB5C512FEC5C4D00C00122 /* fullstack-engineer.md */,
+				EBBB5C522FEC5C4D00C00122 /* ios-engineer.md */,
+				EBBB5C532FEC5C4D00C00122 /* mathematician-researcher.md */,
+				EBBB5C542FEC5C4D00C00122 /* protocol-designer.md */,
+				EBBB5C552FEC5C4D00C00122 /* rust-sp1-engineer.md */,
+				EBBB5C562FEC5C4D00C00122 /* security-researcher.md */,
+				EBBB5C572FEC5C4D00C00122 /* smart-contract-engineer.md */,
+				EBBB5C582FEC5C4D00C00122 /* starknet-engineer.md */,
+				EBBB5C592FEC5C4D00C00122 /* TEAM.md */,
+				EBBB5C5A2FEC5C4D00C00122 /* zk-engineer.md */,
+			);
+			path = agents;
+			sourceTree = "<group>";
+		};
+		EBBB5C672FEC5C4D00C00122 /* docs */ = {
+			isa = PBXGroup;
+			children = (
+				EBBB5C5C2FEC5C4D00C00122 /* AGENT_ATTESTATION.md */,
+				EBBB5C5D2FEC5C4D00C00122 /* ARCHITECTURE.md */,
+				EBBB5C5E2FEC5C4D00C00122 /* COSMOS_MODULE.md */,
+				EBBB5C5F2FEC5C4D00C00122 /* IOS_KEYBOARD.md */,
+				EBBB5C602FEC5C4D00C00122 /* KEY_MANAGEMENT.md */,
+				EBBB5C612FEC5C4D00C00122 /* L1_SETTLEMENT.md */,
+				EBBB5C622FEC5C4D00C00122 /* PRIVACY_MODEL.md */,
+				EBBB5C632FEC5C4D00C00122 /* PROOF_FORMAT.md */,
+				EBBB5C642FEC5C4D00C00122 /* PROVENANCE_CHAIN.md */,
+				EBBB5C652FEC5C4D00C00122 /* VERIFICATION_GUIDE.md */,
+				EBBB5C662FEC5C4D00C00122 /* ZK_CIRCUIT.md */,
+			);
+			path = docs;
+			sourceTree = "<group>";
+		};
+		EBBB5C6F2FEC5C4D00C00122 /* project-scoping */ = {
+			isa = PBXGroup;
+			children = (
+				EBBB5C5B2FEC5C4D00C00122 /* agents */,
+				EBBB5C672FEC5C4D00C00122 /* docs */,
+				EBBB5C682FEC5C4D00C00122 /* .Rhistory */,
+				EBBB5C692FEC5C4D00C00122 /* ~$Sur_Protocol_Deck.pptx */,
+				EBBB5C6A2FEC5C4D00C00122 /* build_whitepaper.sh */,
+				EBBB5C6B2FEC5C4D00C00122 /* README.md */,
+				EBBB5C6C2FEC5C4D00C00122 /* Sur_Protocol_Whitepaper.pdf */,
+				EBBB5C6D2FEC5C4D00C00122 /* WHITEPAPER.md */,
+				EBBB5C6E2FEC5C4D00C00122 /* whitepaper_header.tex */,
+			);
+			path = "project-scoping";
+			sourceTree = "<group>";
+		};
+		EBBB5C832FEC5C4D00C00122 /* Auth */ = {
+			isa = PBXGroup;
+			children = (
+				EBBB5C702FEC5C4D00C00122 /* AppAttestManager.swift */,
+				EBBB5C712FEC5C4D00C00122 /* AuthenticationManager.swift */,
+				EBBB5C722FEC5C4D00C00122 /* Bech32.swift */,
+				EBBB5C732FEC5C4D00C00122 /* BiometricAuthManager.swift */,
+				EBBB5C742FEC5C4D00C00122 /* BlockchainNetwork.swift */,
+				EBBB5C752FEC5C4D00C00122 /* DeviceIDManager.swift */,
+				EBBB5C762FEC5C4D00C00122 /* Ed25519.swift */,
+				EBBB5C772FEC5C4D00C00122 /* EthereumKeyManager.swift */,
+				EBBB5C782FEC5C4D00C00122 /* HumanTypingEvaluator.swift */,
+				EBBB5C792FEC5C4D00C00122 /* Keccak256.swift */,
+				EBBB5C7A2FEC5C4D00C00122 /* KeystrokeLog.swift */,
+				EBBB5C7B2FEC5C4D00C00122 /* KeystrokeLogManager.swift */,
+				EBBB5C7C2FEC5C4D00C00122 /* MnemonicGenerator.swift */,
+				EBBB5C7D2FEC5C4D00C00122 /* MultiChainKeyManager.swift */,
+				EBBB5C7E2FEC5C4D00C00122 /* RIPEMD160.swift */,
+				EBBB5C7F2FEC5C4D00C00122 /* Secp256k1.swift */,
+				EBBB5C802FEC5C4D00C00122 /* SecureEnclaveManager.swift */,
+				EBBB5C812FEC5C4D00C00122 /* SurcoreLibsBridge.swift */,
+				EBBB5C822FEC5C4D00C00122 /* ZKProofGenerator.swift */,
+			);
+			path = Auth;
+			sourceTree = "<group>";
+		};
+		EBBB5C8A2FEC5C4D00C00122 /* Network */ = {
+			isa = PBXGroup;
+			children = (
+				EBBB5C842FEC5C4D00C00122 /* CosmosClient.swift */,
+				EBBB5C852FEC5C4D00C00122 /* CosmosTxBuilder.swift */,
+				EBBB5C862FEC5C4D00C00122 /* L1Client.swift */,
+				EBBB5C872FEC5C4D00C00122 /* SurChainIdentityManager.swift */,
+				EBBB5C882FEC5C4D00C00122 /* SurChainNetwork.swift */,
+				EBBB5C892FEC5C4D00C00122 /* SurChainSigner.swift */,
+			);
+			path = Network;
+			sourceTree = "<group>";
+		};
+		EBBB5C942FEC5C4D00C00122 /* Views */ = {
+			isa = PBXGroup;
+			children = (
+				EBBB5C8B2FEC5C4D00C00122 /* AccountView.swift */,
+				EBBB5C8C2FEC5C4D00C00122 /* AuthenticatedView.swift */,
+				EBBB5C8D2FEC5C4D00C00122 /* CreateWalletView.swift */,
+				EBBB5C8E2FEC5C4D00C00122 /* DeviceRegistrationView.swift */,
+				EBBB5C8F2FEC5C4D00C00122 /* ImportWalletView.swift */,
+				EBBB5C902FEC5C4D00C00122 /* KeystrokeLogsView.swift */,
+				EBBB5C912FEC5C4D00C00122 /* LockScreenView.swift */,
+				EBBB5C922FEC5C4D00C00122 /* SurChainSettingsView.swift */,
+				EBBB5C932FEC5C4D00C00122 /* WelcomeView.swift */,
+			);
+			path = Views;
+			sourceTree = "<group>";
+		};
+		EBBB5C9B2FEC5C4D00C00122 /* Sur */ = {
+			isa = PBXGroup;
+			children = (
+				EBBB5C832FEC5C4D00C00122 /* Auth */,
+				EBBB5C8A2FEC5C4D00C00122 /* Network */,
+				EBBB5C942FEC5C4D00C00122 /* Views */,
+				EBBB5C952FEC5C4D00C00122 /* Assets.xcassets */,
+				EBBB5C962FEC5C4D00C00122 /* ContentView.swift */,
+				EBBB5C972FEC5C4D00C00122 /* Info.plist */,
+				EBBB5C982FEC5C4D00C00122 /* Sur.entitlements */,
+				EBBB5C992FEC5C4D00C00122 /* Sur-Bridging-Header.h */,
+				EBBB5C9A2FEC5C4D00C00122 /* SurApp.swift */,
+			);
+			path = Sur;
+			sourceTree = "<group>";
+		};
+		EBBB5C9E2FEC5C4D00C00122 /* include */ = {
+			isa = PBXGroup;
+			children = (
+				EBBB5C9C2FEC5C4D00C00122 /* libsurcorelibs.h */,
+				EBBB5C9D2FEC5C4D00C00122 /* module.modulemap */,
+			);
+			path = include;
+			sourceTree = "<group>";
+		};
+		EBBB5CA12FEC5C4D00C00122 /* device */ = {
+			isa = PBXGroup;
+			children = (
+				EBBB5C9E2FEC5C4D00C00122 /* include */,
+				EBBB5C9F2FEC5C4D00C00122 /* libsurcorelibs.h */,
+				EBBB5CA02FEC5C4D00C00122 /* libsurcorelibs.a */,
+			);
+			path = device;
+			sourceTree = "<group>";
+		};
+		EBBB5CA42FEC5C4D00C00122 /* include */ = {
+			isa = PBXGroup;
+			children = (
+				EBBB5CA22FEC5C4D00C00122 /* libsurcorelibs.h */,
+				EBBB5CA32FEC5C4D00C00122 /* module.modulemap */,
+			);
+			path = include;
+			sourceTree = "<group>";
+		};
+		EBBB5CA72FEC5C4D00C00122 /* sim */ = {
+			isa = PBXGroup;
+			children = (
+				EBBB5CA42FEC5C4D00C00122 /* include */,
+				EBBB5CA52FEC5C4D00C00122 /* libsurcorelibs.h */,
+				EBBB5CA62FEC5C4D00C00122 /* libsurcorelibs.a */,
+			);
+			path = sim;
+			sourceTree = "<group>";
+		};
+		EBBB5CA92FEC5C4D00C00122 /* build */ = {
+			isa = PBXGroup;
+			children = (
+				EBBB5CA12FEC5C4D00C00122 /* device */,
+				EBBB5CA72FEC5C4D00C00122 /* sim */,
+				EBBB5CA82FEC5C4D00C00122 /* libsurcorelibs.xcframework */,
+			);
+			path = build;
+			sourceTree = "<group>";
+		};
+		EBBB5CAB2FEC5C4D00C00122 /* gen_poseidon_params */ = {
+			isa = PBXGroup;
+			children = (
+				EBBB5CAA2FEC5C4D00C00122 /* main.go */,
+			);
+			path = gen_poseidon_params;
+			sourceTree = "<group>";
+		};
+		EBBB5CAD2FEC5C4D00C00122 /* genfixture */ = {
+			isa = PBXGroup;
+			children = (
+				EBBB5CAC2FEC5C4D00C00122 /* main.go */,
+			);
+			path = genfixture;
+			sourceTree = "<group>";
+		};
+		EBBB5CAF2FEC5C4D00C00122 /* setup */ = {
+			isa = PBXGroup;
+			children = (
+				EBBB5CAE2FEC5C4D00C00122 /* main.go */,
+			);
+			path = setup;
+			sourceTree = "<group>";
+		};
+		EBBB5CB02FEC5C4D00C00122 /* cmd */ = {
+			isa = PBXGroup;
+			children = (
+				EBBB5CAB2FEC5C4D00C00122 /* gen_poseidon_params */,
+				EBBB5CAD2FEC5C4D00C00122 /* genfixture */,
+				EBBB5CAF2FEC5C4D00C00122 /* setup */,
+			);
+			path = cmd;
+			sourceTree = "<group>";
+		};
+		EBBB5CB22FEC5C4D00C00122 /* ffi */ = {
+			isa = PBXGroup;
+			children = (
+				EBBB5CB12FEC5C4D00C00122 /* bridge.go */,
+			);
+			path = ffi;
+			sourceTree = "<group>";
+		};
+		EBBB5CB72FEC5C4D00C00122 /* keys */ = {
+			isa = PBXGroup;
+			children = (
+				EBBB5CB32FEC5C4D00C00122 /* attestation.ccs */,
+				EBBB5CB42FEC5C4D00C00122 /* attestation.pk */,
+				EBBB5CB52FEC5C4D00C00122 /* attestation.vk */,
+				EBBB5CB62FEC5C4D00C00122 /* attestation_vk.sha256 */,
+			);
+			path = keys;
+			sourceTree = "<group>";
+		};
+		EBBB5CC32FEC5C4D00C00122 /* gnark */ = {
+			isa = PBXGroup;
+			children = (
+				EBBB5CB72FEC5C4D00C00122 /* keys */,
+				EBBB5CB82FEC5C4D00C00122 /* circuit.go */,
+				EBBB5CB92FEC5C4D00C00122 /* commitment_test.go */,
+				EBBB5CBA2FEC5C4D00C00122 /* keys.go */,
+				EBBB5CBB2FEC5C4D00C00122 /* poseidon_circuit_test.go */,
+				EBBB5CBC2FEC5C4D00C00122 /* poseidon_constants_gen.go */,
+				EBBB5CBD2FEC5C4D00C00122 /* poseidon_params.go */,
+				EBBB5CBE2FEC5C4D00C00122 /* prove.go */,
+				EBBB5CBF2FEC5C4D00C00122 /* prove_test.go */,
+				EBBB5CC02FEC5C4D00C00122 /* prove_verify_test.go */,
+				EBBB5CC12FEC5C4D00C00122 /* publicinputs.go */,
+				EBBB5CC22FEC5C4D00C00122 /* verify.go */,
+			);
+			path = gnark;
+			sourceTree = "<group>";
+		};
+		EBBB5CC62FEC5C4D00C00122 /* poseidon */ = {
+			isa = PBXGroup;
+			children = (
+				EBBB5CC42FEC5C4D00C00122 /* poseidon.go */,
+				EBBB5CC52FEC5C4D00C00122 /* poseidon_test.go */,
+			);
+			path = poseidon;
+			sourceTree = "<group>";
+		};
+		EBBB5CC72FEC5C4D00C00122 /* build */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			path = build;
+			sourceTree = "<group>";
+		};
+		EBBB5CC82FEC5C4D00C00122 /* examples */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			path = examples;
+			sourceTree = "<group>";
+		};
+		EBBB5CC92FEC5C4D00C00122 /* debug */ = {
+			isa = PBXGroup;
+			children = (
+				EBBB5CC72FEC5C4D00C00122 /* build */,
+				EBBB5CC82FEC5C4D00C00122 /* examples */,
+			);
+			path = debug;
+			sourceTree = "<group>";
+		};
+		EBBB5CCA2FEC5C4D00C00122 /* aarch64-apple-ios */ = {
+			isa = PBXGroup;
+			children = (
+				EBBB5CC92FEC5C4D00C00122 /* debug */,
+			);
+			path = "aarch64-apple-ios";
+			sourceTree = "<group>";
+		};
+		EBBB5CCB2FEC5C4D00C00122 /* build */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			path = build;
+			sourceTree = "<group>";
+		};
+		EBBB5CCC2FEC5C4D00C00122 /* examples */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			path = examples;
+			sourceTree = "<group>";
+		};
+		EBBB5CCD2FEC5C4D00C00122 /* debug */ = {
+			isa = PBXGroup;
+			children = (
+				EBBB5CCB2FEC5C4D00C00122 /* build */,
+				EBBB5CCC2FEC5C4D00C00122 /* examples */,
+			);
+			path = debug;
+			sourceTree = "<group>";
+		};
+		EBBB5CCE2FEC5C4D00C00122 /* target */ = {
+			isa = PBXGroup;
+			children = (
+				EBBB5CCA2FEC5C4D00C00122 /* aarch64-apple-ios */,
+				EBBB5CCD2FEC5C4D00C00122 /* debug */,
+			);
+			path = target;
+			sourceTree = "<group>";
+		};
+		EBBB5CD22FEC5C4D00C00122 /* surcorelibs */ = {
+			isa = PBXGroup;
+			children = (
+				EBBB5CA92FEC5C4D00C00122 /* build */,
+				EBBB5CB02FEC5C4D00C00122 /* cmd */,
+				EBBB5CB22FEC5C4D00C00122 /* ffi */,
+				EBBB5CC32FEC5C4D00C00122 /* gnark */,
+				EBBB5CC62FEC5C4D00C00122 /* poseidon */,
+				EBBB5CCE2FEC5C4D00C00122 /* target */,
+				EBBB5CCF2FEC5C4D00C00122 /* go.mod */,
+				EBBB5CD02FEC5C4D00C00122 /* go.sum */,
+				EBBB5CD12FEC5C4D00C00122 /* Makefile */,
+			);
+			path = surcorelibs;
+			sourceTree = "<group>";
+		};
+		EBBB5CD82FEC5C4D00C00122 /* SurKeyboard */ = {
+			isa = PBXGroup;
+			children = (
+				EBBB5CD32FEC5C4D00C00122 /* Info.plist */,
+				EBBB5CD42FEC5C4D00C00122 /* KeyboardViewController.swift */,
+				EBBB5CD52FEC5C4D00C00122 /* KeystrokeLogger.swift */,
+				EBBB5CD62FEC5C4D00C00122 /* KeystrokeLogger+Signing.swift */,
+				EBBB5CD72FEC5C4D00C00122 /* SurKeyboard.entitlements */,
+			);
+			path = SurKeyboard;
+			sourceTree = "<group>";
+		};
+		EBBB5CDA2FEC5C4D00C00122 /* SurTests */ = {
+			isa = PBXGroup;
+			children = (
+				EBBB5CD92FEC5C4D00C00122 /* SurTests.swift */,
+			);
+			path = SurTests;
+			sourceTree = "<group>";
+		};
+		EBBB5CDD2FEC5C4D00C00122 /* SurUITests */ = {
+			isa = PBXGroup;
+			children = (
+				EBBB5CDB2FEC5C4D00C00122 /* SurUITests.swift */,
+				EBBB5CDC2FEC5C4D00C00122 /* SurUITestsLaunchTests.swift */,
+			);
+			path = SurUITests;
+			sourceTree = "<group>";
+		};
+		EBBB5CE22FEC5C4D00C00122 /* tasks */ = {
+			isa = PBXGroup;
+			children = (
+				EBBB5CDE2FEC5C4D00C00122 /* REVIEW.md */,
+				EBBB5CDF2FEC5C4D00C00122 /* TASKS-CRITICAL.md */,
+				EBBB5CE02FEC5C4D00C00122 /* TASKS-HIGH.md */,
+				EBBB5CE12FEC5C4D00C00122 /* TASKS-MEDIUM.md */,
+			);
+			path = tasks;
+			sourceTree = "<group>";
+		};
+		EBBB5CEA2FEC5C4D00C00122 /* Sur */ = {
+			isa = PBXGroup;
+			children = (
+				EBBB5C382FEC5C4D00C00122 /* .claude */,
+				EBBB5C492FEC5C4D00C00122 /* .github */,
+				EBBB5C4B2FEC5C4D00C00122 /* Contracts */,
+				EBBB5C4D2FEC5C4D00C00122 /* docs */,
+				EBBB5C6F2FEC5C4D00C00122 /* project-scoping */,
+				EBBB5C9B2FEC5C4D00C00122 /* Sur */,
+				EBBB5CD22FEC5C4D00C00122 /* surcorelibs */,
+				EBBB5CD82FEC5C4D00C00122 /* SurKeyboard */,
+				EBBB5CDA2FEC5C4D00C00122 /* SurTests */,
+				EBBB5CDD2FEC5C4D00C00122 /* SurUITests */,
+				EBBB5CE22FEC5C4D00C00122 /* tasks */,
+				EBBB5CE32FEC5C4D00C00122 /* .gitignore */,
+				EBBB5CE42FEC5C4D00C00122 /* BEHAVIORAL_THRESHOLDS.md */,
+				EBBB5CE52FEC5C4D00C00122 /* Podfile */,
+				EBBB5CE62FEC5C4D00C00122 /* PROJECT_SCOPE.md */,
+				EBBB5CE72FEC5C4D00C00122 /* PROOF_CRYPTOGRAPHY.md */,
+				EBBB5CE82FEC5C4D00C00122 /* README.md */,
+				EBBB5CE92FEC5C4D00C00122 /* Sur.xcodeproj */,
+			);
+			name = Sur;
+			sourceTree = "<group>";
+		};
+		EBBB5CEB2FEC5C4D00C00122 /* Products */ = {
+			isa = PBXGroup;
+			name = Products;
 			sourceTree = "<group>";
 		};
 		EBD1984B2E90F8650026ED7D = {
@@ -309,6 +942,12 @@
 			preferredProjectObjectVersion = 77;
 			productRefGroup = EBD198552E90F8650026ED7D /* Products */;
 			projectDirPath = "";
+			projectReferences = (
+				{
+					ProductGroup = EBBB5CEB2FEC5C4D00C00122 /* Products */;
+					ProjectRef = EBBB5CE92FEC5C4D00C00122 /* Sur.xcodeproj */;
+				},
+			);
 			projectRoot = "";
 			targets = (
 				EBD198532E90F8650026ED7D /* Sur */,
@@ -547,6 +1186,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = com.ordo.sure.Sur;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_OBJC_BRIDGING_HEADER = "Sur/Sur-Bridging-Header.h";
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
@@ -578,6 +1218,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = com.ordo.sure.Sur;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_OBJC_BRIDGING_HEADER = "Sur/Sur-Bridging-Header.h";
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
@@ -660,7 +1301,7 @@
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = SurKeyboard/SurKeyboard.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				DEVELOPMENT_TEAM = 7465NL4X4Y;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = SurKeyboard/Info.plist;
@@ -686,7 +1327,7 @@
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = SurKeyboard/SurKeyboard.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				DEVELOPMENT_TEAM = 7465NL4X4Y;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = SurKeyboard/Info.plist;

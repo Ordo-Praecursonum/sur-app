@@ -7,6 +7,7 @@
 //
 
 import SwiftUI
+import CryptoKit
 
 // MARK: - Keystroke Logs List View
 
@@ -15,6 +16,7 @@ struct KeystrokeLogsView: View {
     @State private var selectedSession: KeystrokeSession?
     @State private var showingDetail = false
     @State private var copiedToast = false
+    @StateObject private var attestStore = TextAttestationStore.shared
     
     var body: some View {
         NavigationStack {
@@ -39,7 +41,7 @@ struct KeystrokeLogsView: View {
                 } else {
                     List {
                         ForEach(sessions, id: \.sessionId) { session in
-                            SessionRowView(session: session)
+                            SessionRowView(session: session, attestStore: attestStore)
                                 .contentShape(Rectangle())
                                 .onTapGesture {
                                     selectedSession = session
@@ -86,6 +88,9 @@ struct KeystrokeLogsView: View {
     
     private func loadSessions() {
         sessions = KeystrokeLogManager.shared.loadAllSessions()
+        // Automatically attest captured sessions on-chain (eligible ones only;
+        // already-attested sessions are skipped). Runs in the background.
+        attestStore.autoAttest(sessions: sessions)
     }
     
     private func deleteSessions(at offsets: IndexSet) {
@@ -101,43 +106,101 @@ struct KeystrokeLogsView: View {
 
 struct SessionRowView: View {
     let session: KeystrokeSession
-    
+    @ObservedObject var attestStore: TextAttestationStore
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Text(session.shortHash)
                     .font(.system(.headline, design: .monospaced))
                     .foregroundColor(.primary)
-                
+
                 Spacer()
-                
+
                 HumanScoreBadge(score: session.humanTypingScore ?? 0)
             }
-            
+
             HStack {
                 Image(systemName: "keyboard")
                     .foregroundColor(.secondary)
                 Text("\(session.signedKeystrokes.count) keystrokes")
                     .font(.subheadline)
                     .foregroundColor(.secondary)
-                
+
                 Spacer()
-                
+
                 Text(formatDate(session.startTimestamp))
                     .font(.caption)
                     .foregroundColor(.secondary)
             }
-            
+
             if !session.typedText.isEmpty {
                 Text(session.typedText.prefix(50) + (session.typedText.count > 50 ? "..." : ""))
                     .font(.caption)
                     .foregroundColor(.secondary)
                     .lineLimit(1)
             }
+
+            attestationStatus
         }
         .padding(.vertical, 4)
     }
-    
+
+    @ViewBuilder
+    private var attestationStatus: some View {
+        if !attestStore.isEligible(session) {
+            Label("Too short to attest (needs ≥\(TextAttestationStore.minKeystrokes) keystrokes)",
+                  systemImage: "minus.circle")
+                .font(.caption2)
+                .foregroundColor(.secondary)
+        } else if let item = attestStore.status(forSessionId: session.sessionId) {
+            HStack(spacing: 6) {
+                switch item.status {
+                case .pending:
+                    Label("Queued for attestation", systemImage: "clock")
+                        .font(.caption2).foregroundColor(.secondary)
+                case .submitting:
+                    ProgressView().scaleEffect(0.7)
+                    Text("Attesting on-chain…").font(.caption2).foregroundColor(.orange)
+                case .submitted:
+                    Label("Attested on-chain", systemImage: "checkmark.seal.fill")
+                        .font(.caption2).foregroundColor(.green)
+                    Spacer()
+                    if let tx = item.txHash {
+                        Text(shorten(tx))
+                            .font(.system(.caption2, design: .monospaced))
+                            .foregroundColor(.secondary)
+                    }
+                case .failed:
+                    Label("Attestation failed", systemImage: "xmark.circle")
+                        .font(.caption2).foregroundColor(.red)
+                    Spacer()
+                    Button("Retry") { Task { await attestStore.submit(id: item.id) } }
+                        .font(.caption2).buttonStyle(.borderless)
+                }
+            }
+            // Show the actual reason so failures are diagnosable, not opaque.
+            if item.status == .failed, let err = item.error, !err.isEmpty {
+                Text(err)
+                    .font(.caption2)
+                    .foregroundColor(.red)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        } else if SurChainIdentityManager.shared.registeredUsername == nil {
+            Label("Register device (Account → Sur Chain) to attest",
+                  systemImage: "exclamationmark.triangle")
+                .font(.caption2).foregroundColor(.secondary)
+        } else {
+            Label("Preparing attestation…", systemImage: "hourglass")
+                .font(.caption2).foregroundColor(.secondary)
+        }
+    }
+
+    private func shorten(_ s: String) -> String {
+        guard s.count > 12 else { return s }
+        return "\(s.prefix(8))…\(s.suffix(4))"
+    }
+
     private func formatDate(_ timestamp: Int64) -> String {
         let date = Date(timeIntervalSince1970: TimeInterval(timestamp) / 1000)
         let formatter = DateFormatter()
@@ -179,10 +242,24 @@ struct HumanScoreBadge: View {
 struct SessionDetailView: View {
     let session: KeystrokeSession
     @Environment(\.dismiss) private var dismiss
+    @ObservedObject private var attestStore = TextAttestationStore.shared
     @State private var showingZKProof = false
     @State private var showingSolidityCode = false
     @State private var copiedToast = false
-    
+
+    /// The attestation queue item for this session, if one exists.
+    private var attestItem: AttestationItem? {
+        attestStore.status(forSessionId: session.sessionId)
+    }
+
+    /// SHA-256 of the typed text (hex) — the value to paste into the explorer's
+    /// "Verify Origin" page to look this content up on-chain.
+    private var contentHashHex: String? {
+        guard !session.typedText.isEmpty else { return nil }
+        return Data(SHA256.hash(data: Data(session.typedText.utf8)))
+            .map { String(format: "%02x", $0) }.joined()
+    }
+
     var body: some View {
         NavigationStack {
             List {
@@ -197,7 +274,9 @@ struct SessionDetailView: View {
                         InfoRow(label: "Ended", value: formatTimestamp(endTime))
                     }
                 }
-                
+
+                attestationSection
+
                 // Human Typing Analysis Section
                 Section("Human Typing Analysis") {
                     HStack {
@@ -332,14 +411,111 @@ struct SessionDetailView: View {
         return HumanTypingEvaluator.evaluateDetailed(session: session)
     }
     
+    // MARK: - On-chain attestation section
+
+    @ViewBuilder
+    private var attestationSection: some View {
+        Section("On-Chain Attestation") {
+            // Status line.
+            HStack {
+                Text("Status")
+                Spacer()
+                attestationStatusLabel
+            }
+
+            // Eligibility note for short sessions.
+            if !attestStore.isEligible(session) {
+                Text("This session is too short to attest (needs ≥\(TextAttestationStore.minKeystrokes) keystrokes).")
+                    .font(.caption).foregroundColor(.secondary)
+            }
+
+            // Device id (the pseudonymous on-chain identity).
+            if let deviceID = SurChainIdentityManager.shared.registeredUsername {
+                copyableRow(label: "Device id", value: deviceID)
+            }
+
+            // Content hash — paste this into the explorer's Verify Origin page.
+            if let ch = contentHashHex {
+                copyableRow(label: "Content hash (SHA-256)", value: ch)
+            }
+
+            // Transaction + block, once on-chain.
+            if let tx = attestItem?.txHash, !tx.isEmpty {
+                copyableRow(label: "Transaction hash", value: tx)
+            }
+            if let h = attestItem?.txHeight {
+                InfoRow(label: "Block height", value: "\(h)")
+            }
+
+            // Failure reason + manual submit.
+            if let item = attestItem, item.status == .failed, let err = item.error, !err.isEmpty {
+                Text(err).font(.caption).foregroundColor(.red)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if let item = attestItem, item.status == .pending || item.status == .failed {
+                Button {
+                    Task { await attestStore.submit(id: item.id) }
+                } label: {
+                    Label(item.status == .failed ? "Retry attestation" : "Submit now",
+                          systemImage: "arrow.up.circle")
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var attestationStatusLabel: some View {
+        if !attestStore.isEligible(session) {
+            Label("Not eligible", systemImage: "minus.circle").foregroundColor(.secondary)
+        } else {
+            switch attestItem?.status {
+            case .submitted:
+                Label("On-chain", systemImage: "checkmark.seal.fill").foregroundColor(.green)
+            case .submitting:
+                Label("Submitting…", systemImage: "hourglass").foregroundColor(.orange)
+            case .failed:
+                Label("Failed", systemImage: "xmark.circle").foregroundColor(.red)
+            case .pending:
+                Label("Pending", systemImage: "clock").foregroundColor(.secondary)
+            case nil:
+                Label("Not submitted", systemImage: "clock").foregroundColor(.secondary)
+            }
+        }
+    }
+
+    /// A tappable row that copies its value and is text-selectable.
+    private func copyableRow(label: String, value: String) -> some View {
+        Button { copyValue(value) } label: {
+            VStack(alignment: .leading, spacing: 2) {
+                HStack {
+                    Text(label).font(.caption).foregroundColor(.secondary)
+                    Spacer()
+                    Image(systemName: "doc.on.doc").font(.caption).foregroundColor(.accentColor)
+                }
+                Text(value)
+                    .font(.system(.footnote, design: .monospaced))
+                    .foregroundColor(.primary)
+                    .textSelection(.enabled)
+                    .lineLimit(2)
+                    .truncationMode(.middle)
+            }
+        }
+        .foregroundColor(.primary)
+    }
+
+    private func copyValue(_ value: String) {
+        Pasteboard.copy(value)
+        showCopiedToast()
+    }
+
     private func copyHash() {
-        UIPasteboard.general.string = session.sessionHash ?? ""
+        Pasteboard.copy(session.sessionHash ?? "")
         showCopiedToast()
     }
     
     private func copyJSON() {
         if let json = KeystrokeLogManager.shared.exportSessionAsJSON(session) {
-            UIPasteboard.general.string = json
+            Pasteboard.copy(json)
             showCopiedToast()
         }
     }
@@ -350,7 +526,7 @@ struct SessionDetailView: View {
             encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
             if let data = try? encoder.encode(proof),
                let json = String(data: data, encoding: .utf8) {
-                UIPasteboard.general.string = json
+                Pasteboard.copy(json)
                 showCopiedToast()
             }
         }
@@ -358,7 +534,9 @@ struct SessionDetailView: View {
     
     private func copyRemixFormat() {
         if let proof = session.zkProof {
-            UIPasteboard.general.string = proof.toDetailedRemixFormat()
+            // Format the 5 public inputs as a JSON array for the gnark verifier
+            let inputs = proof.publicInputsArray()
+            Pasteboard.copy(inputs.joined(separator: "\n"))
             showCopiedToast()
         }
     }
@@ -548,29 +726,12 @@ struct ZKProofDetailView: View {
                     }
                 }
                 
-                Section("Public Inputs") {
-                    InfoRow(label: "Session Hash", value: proof.publicInputs.sessionHash, monospaced: true)
-                    InfoRow(label: "Keystrokes", value: "\(proof.publicInputs.keystrokeCount)")
-                    InfoRow(label: "Duration", value: "\(proof.publicInputs.typingDuration) ms")
-                    InfoRow(label: "Human Score", value: String(format: "%.1f%%", proof.publicInputs.humanTypingScore))
-                }
-                
-                Section("Public Keys") {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("User Public Key")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                        Text(proof.publicInputs.userPublicKey)
-                            .font(.system(.caption2, design: .monospaced))
-                    }
-                    
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Device Public Key")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                        Text(proof.publicInputs.devicePublicKey)
-                            .font(.system(.caption2, design: .monospaced))
-                    }
+                Section("Public Inputs (gnark Groth16)") {
+                    InfoRow(label: "Username Hash", value: proof.publicInputs.usernameHash, monospaced: true)
+                    InfoRow(label: "Content Hash Lo", value: proof.publicInputs.contentHashLo, monospaced: true)
+                    InfoRow(label: "Content Hash Hi", value: proof.publicInputs.contentHashHi, monospaced: true)
+                    InfoRow(label: "Nullifier", value: proof.publicInputs.nullifier, monospaced: true)
+                    InfoRow(label: "Commitment Root", value: proof.publicInputs.commitmentRoot, monospaced: true)
                 }
                 
                 Section {
@@ -619,7 +780,7 @@ struct ZKProofDetailView: View {
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         if let data = try? encoder.encode(proof),
            let json = String(data: data, encoding: .utf8) {
-            UIPasteboard.general.string = json
+            Pasteboard.copy(json)
             showCopiedToast()
         }
     }
@@ -681,7 +842,7 @@ struct SolidityCodeView: View {
     }
     
     private func copyCode() {
-        UIPasteboard.general.string = ZKProofGenerator.generateSolidityVerifier()
+        Pasteboard.copy(ZKProofGenerator.generateSolidityVerifier())
         showCopiedToast()
     }
     

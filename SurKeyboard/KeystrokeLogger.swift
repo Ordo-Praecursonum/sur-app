@@ -7,7 +7,19 @@
 //
 
 import Foundation
+import Security
 import CryptoKit
+import os
+
+/// Structured logging for the keyboard extension. View in Console.app or the Xcode
+/// console by filtering subsystem `com.ordo.sur.keyboard`. Categories separate the
+/// lifecycle (view load), per-keystroke, and signing paths so a hang is easy to spot
+/// (the last line before the stall names the culprit).
+enum KBLog {
+    static let lifecycle = Logger(subsystem: "com.ordo.sur.keyboard", category: "lifecycle")
+    static let keystroke = Logger(subsystem: "com.ordo.sur.keyboard", category: "keystroke")
+    static let signing   = Logger(subsystem: "com.ordo.sur.keyboard", category: "signing")
+}
 
 // MARK: - Keystroke Data Structures (Shared with Main App)
 
@@ -45,6 +57,7 @@ struct KBKeystrokeSession: Codable, Equatable {
     var sessionHash: String?
     var humanTypingScore: Double?
     var zkProof: KBZKProof?
+    var sessionSignature: String?
     let userPublicKey: String
     let devicePublicKey: String
     
@@ -97,12 +110,11 @@ struct KBZKProof: Codable, Equatable {
 }
 
 struct KBZKPublicInputs: Codable, Equatable {
-    let sessionHash: String
-    let keystrokeCount: Int
-    let typingDuration: Int64
-    let userPublicKey: String
-    let devicePublicKey: String
-    let humanTypingScore: Double
+    let usernameHash: String
+    let contentHashLo: String
+    let contentHashHi: String
+    let nullifier: String
+    let commitmentRoot: String
 }
 
 // MARK: - Crypto Helper
@@ -167,23 +179,47 @@ final class KeystrokeLogger {
     private var devicePrivateKey: Data?
     private var userPublicKey: String = ""
     private var devicePublicKey: String = ""
+
+    /// Serial queue for per-keystroke work. Hashing and (especially) Secure Enclave
+    /// signing are too slow to run on the keyboard's main thread — doing so froze
+    /// text input. All session mutation is funneled through this queue so the main
+    /// thread only captures the lightweight keystroke and returns immediately.
+    private let workQueue = DispatchQueue(label: "com.ordo.sur.keyboard.keystrokeLogger", qos: .utility)
     
     // MARK: - Initialization
     
     private init() {
+        KBLog.lifecycle.log("KeystrokeLogger init: loading keys from storage")
         loadKeysFromStorage()
+        KBLog.lifecycle.log("KeystrokeLogger init: keys loaded (deviceKey: \(self.devicePrivateKey != nil), userKey: \(self.userPrivateKey != nil))")
     }
     
     // MARK: - Key Management
     
     private func loadKeysFromStorage() {
-        // Load device keys from UserDefaults (shared with main app)
         guard let defaults = UserDefaults(suiteName: sharedSuiteName) else { return }
-        
-        if let devicePrivKeyHex = defaults.string(forKey: "device.privateKey"),
-           let devicePubKeyHex = defaults.string(forKey: "device.publicKey"),
-           let privKeyData = KBCrypto.hexToData(devicePrivKeyHex) {
+
+        // Load device private key from the Keychain (shared via App Group).
+        // The main app stores it under these attributes; we replicate the same query
+        // inline here because the keyboard extension cannot import the main app target.
+        let keychainQuery: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: "com.ordo.sur.wallet",
+            kSecAttrAccount as String: "com.ordo.sur.device.privateKey",
+            kSecAttrAccessGroup as String: "group.com.ordo.sure.Sur",
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne
+        ]
+        var keychainResult: AnyObject?
+        let status = SecItemCopyMatching(keychainQuery as CFDictionary, &keychainResult)
+        if status == errSecSuccess,
+           let privKeyData = keychainResult as? Data,
+           privKeyData.count == 32 {
             self.devicePrivateKey = privKeyData
+        }
+
+        // Load device public key from UserDefaults (public data, not secret)
+        if let devicePubKeyHex = defaults.string(forKey: "device.publicKey") {
             self.devicePublicKey = devicePubKeyHex
         }
         
@@ -225,10 +261,8 @@ final class KeystrokeLogger {
     }
     
     func recordKeystroke(key: String, xCoordinate: Double, yCoordinate: Double) {
-        if currentSession == nil {
-            startNewSession()
-        }
-        
+        // Capture the keystroke immediately and cheaply on the caller's (main) thread
+        // so timing stays accurate, then do all hashing/signing off the main thread.
         let timestamp = Int64(Date().timeIntervalSince1970 * 1000)
         let keystroke = KBKeystroke(
             key: key,
@@ -236,59 +270,90 @@ final class KeystrokeLogger {
             xCoordinate: xCoordinate,
             yCoordinate: yCoordinate
         )
-        
-        // Create signed keystroke
-        let motionDigest = KBCrypto.keccak256(keystroke.toData())
-        let motionDigestHex = motionDigest.map { String(format: "%02x", $0) }.joined()
-        
-        // For simplicity, we use the motion digest as placeholder signatures
-        // In production, this would use actual secp256k1 signing
-        let signedKeystroke = KBSignedKeystroke(
-            keystroke: keystroke,
-            userSign: motionDigestHex,
-            deviceSign: motionDigestHex,
-            motionDigest: motionDigestHex
-        )
-        
-        currentSession?.signedKeystrokes.append(signedKeystroke)
+
+        workQueue.async { [weak self] in
+            guard let self = self else { return }
+            if self.currentSession == nil {
+                self.startNewSession()
+            }
+
+            // Per keystroke we record ONLY a cheap digest. We do NOT run a Secure
+            // Enclave signature here — signing on every keystroke is far too slow and
+            // froze typing system-wide. The authoritative device signature is applied
+            // ONCE to the whole session bundle in finalizeCurrentSession(); the main
+            // app re-derives/re-signs for the real proof regardless.
+            let keystrokeData = keystroke.toData()
+            let deviceSignature = SHA256.hash(data: keystrokeData).map { String(format: "%02x", $0) }.joined()
+
+            // userSign is a placeholder (user key requires biometric auth, not
+            // available in the keyboard extension).
+            let userSign = "placeholder_requires_biometric"
+
+            let signedKeystroke = KBSignedKeystroke(
+                keystroke: keystroke,
+                userSign: userSign,
+                deviceSign: deviceSignature,
+                motionDigest: SHA256.hash(data: (userSign + deviceSignature).data(using: .utf8)!).map { String(format: "%02x", $0) }.joined()
+            )
+
+            self.currentSession?.signedKeystrokes.append(signedKeystroke)
+            KBLog.keystroke.debug("recorded keystroke; session count now \(self.currentSession?.signedKeystrokes.count ?? 0)")
+        }
     }
     
     func finalizeCurrentSession() -> KBKeystrokeSession? {
-        guard var session = currentSession else { return nil }
-        
-        session.endTimestamp = Int64(Date().timeIntervalSince1970 * 1000)
-        _ = session.computeSessionHash()
-        session.humanTypingScore = evaluateHumanTyping(session)
-        session.zkProof = generateZKProof(for: session)
-        
-        saveSession(session)
-        currentSession = nil
-        
-        return session
-    }
-    
-    func cancelCurrentSession() {
-        currentSession = nil
-    }
-    
-    var currentSessionKeystrokeCount: Int {
-        return currentSession?.signedKeystrokes.count ?? 0
-    }
-    
-    var currentSessionShortHash: String {
-        if var session = currentSession {
+        // Run on workQueue so we don't race the background keystroke appends, and so
+        // any queued keystrokes are flushed before we snapshot the session.
+        return workQueue.sync {
+            guard var session = currentSession else { return nil }
+            KBLog.signing.log("finalizing session with \(session.signedKeystrokes.count) keystrokes")
+
+            session.endTimestamp = Int64(Date().timeIntervalSince1970 * 1000)
             _ = session.computeSessionHash()
-            return session.shortHash
+            session.humanTypingScore = evaluateHumanTyping(session)
+            session.zkProof = generateZKProof(for: session)
+
+            // Sign the complete session bundle ONCE with the Secure Enclave key.
+            if let sessionJSON = try? JSONEncoder().encode(session),
+               let sessionSignature = signSessionBundle(sessionJSON) {
+                session.sessionSignature = sessionSignature.map { String(format: "%02x", $0) }.joined()
+                KBLog.signing.log("session bundle signed")
+            } else {
+                KBLog.signing.error("session bundle signing failed (Secure Enclave key unavailable?)")
+            }
+
+            saveSession(session)
+            currentSession = nil
+            return session
         }
-        return "#0x000...000"
     }
-    
+
+    func cancelCurrentSession() {
+        workQueue.sync { currentSession = nil }
+    }
+
+    var currentSessionKeystrokeCount: Int {
+        return workQueue.sync { currentSession?.signedKeystrokes.count ?? 0 }
+    }
+
+    var currentSessionShortHash: String {
+        return workQueue.sync {
+            if var session = currentSession {
+                _ = session.computeSessionHash()
+                return session.shortHash
+            }
+            return "#0x000...000"
+        }
+    }
+
     /// Get the full session hash (for copying)
     var currentSessionFullHash: String {
-        if var session = currentSession {
-            return session.computeSessionHash()
+        return workQueue.sync {
+            if var session = currentSession {
+                return session.computeSessionHash()
+            }
+            return "0x0000000000000000000000000000000000000000000000000000000000000000"
         }
-        return "0x0000000000000000000000000000000000000000000000000000000000000000"
     }
     
     /// Get the most recent finalized session's full hash
@@ -341,9 +406,11 @@ final class KeystrokeLogger {
             return nil
         }
         
-        let duration = (session.endTimestamp ?? session.signedKeystrokes.last?.keystroke.timestamp ?? session.startTimestamp) - session.startTimestamp
-        let humanScore = session.humanTypingScore ?? 0
-        
+        // Behavioral values stay as private witness — they are used inside the circuit but
+        // are NOT included in the public inputs that leave the device.
+        _ = (session.endTimestamp ?? session.signedKeystrokes.last?.keystroke.timestamp ?? session.startTimestamp) - session.startTimestamp  // typingDurationMs (private witness)
+        _ = session.humanTypingScore ?? 0  // humanScore (private witness)
+
         // Build Merkle root of motion digests (private witness)
         let motionDigests = session.signedKeystrokes.map { $0.motionDigest }
         let merkleRoot = computeMerkleRoot(leaves: motionDigests)
@@ -363,19 +430,16 @@ final class KeystrokeLogger {
         let commitment = KBCrypto.keccak256(commitmentInput)
         let commitmentHex = commitment.map { String(format: "%02x", $0) }.joined()
         
-        // Fiat-Shamir: derive nullifier deterministically from transcript (non-interactive)
+        // Fiat-Shamir: derive nullifier deterministically from commitment + merkle root (non-interactive).
+        // Behavioral stats (keystroke count, duration, humanScore) stay as private witness — NOT in transcript.
         var transcriptInput = Data()
         transcriptInput.append(Self.domainSeparator.data(using: .utf8) ?? Data())
         transcriptInput.append(commitment)
-        transcriptInput.append(sessionHash.data(using: .utf8) ?? Data())
-        transcriptInput.append(contentsOf: withUnsafeBytes(of: Int64(session.signedKeystrokes.count).bigEndian) { Data($0) })
-        transcriptInput.append(contentsOf: withUnsafeBytes(of: duration.bigEndian) { Data($0) })
-        transcriptInput.append(session.userPublicKey.data(using: .utf8) ?? Data())
-        transcriptInput.append(session.devicePublicKey.data(using: .utf8) ?? Data())
-        transcriptInput.append(contentsOf: withUnsafeBytes(of: humanScore.bitPattern.bigEndian) { Data($0) })
+        transcriptInput.append(merkleRoot)
         let nullifier = KBCrypto.keccak256(transcriptInput)
         let nullifierHex = nullifier.map { String(format: "%02x", $0) }.joined()
-        
+        let commitmentRootHex = merkleRoot.map { String(format: "%02x", $0) }.joined()
+
         // Create proof element π
         var proofInput = Data()
         proofInput.append(blindingFactorR)
@@ -384,14 +448,15 @@ final class KeystrokeLogger {
         proofInput.append(merkleRoot)
         let proofElement = KBCrypto.keccak256(proofInput)
         let proofHex = proofElement.map { String(format: "%02x", $0) }.joined()
-        
+
+        // Public inputs: 5 BN254 field elements — the ONLY values revealed to the verifier.
+        // Placeholder hex strings used until gnark FFI is wired up in TASK-1.
         let publicInputs = KBZKPublicInputs(
-            sessionHash: sessionHash,
-            keystrokeCount: session.signedKeystrokes.count,
-            typingDuration: duration,
-            userPublicKey: session.userPublicKey,
-            devicePublicKey: session.devicePublicKey,
-            humanTypingScore: humanScore
+            usernameHash: "0x" + String(repeating: "00", count: 32),   // placeholder until gnark FFI (TASK-1)
+            contentHashLo: "0x" + String(repeating: "00", count: 32),  // placeholder until gnark FFI (TASK-1)
+            contentHashHi: "0x" + String(repeating: "00", count: 32),  // placeholder until gnark FFI (TASK-1)
+            nullifier: nullifierHex,
+            commitmentRoot: commitmentRootHex
         )
         
         return KBZKProof(

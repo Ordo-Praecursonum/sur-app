@@ -118,8 +118,8 @@ final class MultiChainKeyManager {
         guard address.count >= 10 else { return address }
         
         switch network {
-        case .cosmos:
-            // Cosmos addresses: cosmos1abc...xyz
+        case .cosmos, .sur:
+            // Bech32 addresses: cosmos1abc...xyz / sur1abc...xyz
             let prefix = String(address.prefix(10))
             let suffix = String(address.suffix(4))
             return "\(prefix)...\(suffix)"
@@ -316,6 +316,8 @@ final class MultiChainKeyManager {
             return try generateTronAddress(from: privateKey)
         case .cosmos:
             return try generateCosmosAddress(from: privateKey)
+        case .sur:
+            return try generateBech32Address(from: privateKey, hrp: "sur")
         case .solana:
             return try generateSolanaAddress(from: privateKey)
         }
@@ -372,20 +374,20 @@ final class MultiChainKeyManager {
     /// Generate Cosmos address from private key
     /// Uses secp256k1 for public key derivation and proper Bech32 encoding
     private static func generateCosmosAddress(from privateKey: Data) throws -> String {
-        // Generate compressed public key using secp256k1
+        return try generateBech32Address(from: privateKey, hrp: "cosmos")
+    }
+
+    /// Generate a Cosmos-style bech32 address with the given HRP (e.g. "cosmos", "sur").
+    /// secp256k1 compressed pubkey → SHA-256 → RIPEMD-160 → bech32(hrp).
+    private static func generateBech32Address(from privateKey: Data, hrp: String) throws -> String {
         guard let compressedPublicKey = Secp256k1.deriveCompressedPublicKey(from: privateKey) else {
             throw MultiChainKeyError.invalidPrivateKey
         }
-        
-        // SHA256 then RIPEMD-160 (proper Cosmos hash160)
         let sha256Hash = SHA256.hash(data: compressedPublicKey)
         let hash160 = RIPEMD160.hash(Data(sha256Hash))
-        
-        // Bech32 encode with "cosmos" prefix
-        guard let address = Bech32.encode(hrp: "cosmos", data: hash160) else {
+        guard let address = Bech32.encode(hrp: hrp, data: hash160) else {
             throw MultiChainKeyError.addressGenerationFailed
         }
-        
         return address
     }
     
