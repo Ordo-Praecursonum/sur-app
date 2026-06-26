@@ -221,16 +221,15 @@ final class SecureEnclaveManager {
     /// Create access control settings for Keychain items
     private func createAccessControl(requireBiometric: Bool) throws -> SecAccessControl? {
         guard requireBiometric else { return nil }
-        
-        var flags: SecAccessControlCreateFlags = .privateKeyUsage
-        
-        // Use biometry if available, otherwise fall back to device passcode
-        if isBiometricAvailable {
-            flags = [.userPresence, .privateKeyUsage]
-        } else {
-            flags = [.devicePasscode, .privateKeyUsage]
-        }
-        
+
+        // NOTE: `.privateKeyUsage` is ONLY valid for Secure-Enclave EC keys, not for
+        // the generic-password items we store the mnemonic / wallet key in. Combining
+        // it here produced an invalid access control that SecItemAdd rejects on a real
+        // device (the Simulator doesn't enforce it) — which is why Face ID couldn't be
+        // enabled/used on device. Use `.userPresence` (Face ID/Touch ID with passcode
+        // fallback), or `.devicePasscode` when no biometrics are enrolled.
+        let flags: SecAccessControlCreateFlags = isBiometricAvailable ? .userPresence : .devicePasscode
+
         var error: Unmanaged<CFError>?
         guard let accessControl = SecAccessControlCreateWithFlags(
             kCFAllocatorDefault,
