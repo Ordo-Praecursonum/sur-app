@@ -38,9 +38,18 @@ struct SurChainSettingsView: View {
     @State private var customURL: String = ""
     @State private var customChainID: String = ""
 
+    // Whether keyboard-shared proof links carry &d=<device id>. Stored in the
+    // app group so the keyboard extension can read it when building the link.
+    // Off by default: the link then only claims "this content is proven",
+    // without naming which device — the more private choice.
+    @State private var includeDeviceIDInLinks =
+        UserDefaults(suiteName: "group.com.ordo.sure.Sur")?
+            .bool(forKey: "sur.share.includeDeviceIDInLinks") ?? false
+
     var body: some View {
         List {
             identitySection
+            sharingSection
             balanceSection
             networkSection
         }
@@ -161,6 +170,27 @@ struct SurChainSettingsView: View {
 
     // MARK: - Balance
 
+    private var sharingSection: some View {
+        Section {
+            Toggle(isOn: $includeDeviceIDInLinks) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Include device id in proof links")
+                    Text("Shared links will also name this device (surdev…), so the link claims \"typed on my device\" — not just \"proven human\".")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+            }
+            .onChange(of: includeDeviceIDInLinks) { newValue in
+                UserDefaults(suiteName: "group.com.ordo.sure.Sur")?
+                    .set(newValue, forKey: "sur.share.includeDeviceIDInLinks")
+            }
+        } header: {
+            Text("Sharing")
+        } footer: {
+            Text("The Sur Keyboard's link button sends your message followed by a link to its on-chain proof.")
+        }
+    }
+
     private var balanceSection: some View {
         Section {
             HStack {
@@ -217,10 +247,21 @@ struct SurChainSettingsView: View {
                 get: { config.network.environment },
                 set: { config.select($0) }
             )) {
-                ForEach(SurChainEnvironment.allCases) { env in
+                // Mainnet is not selectable yet (shown disabled below).
+                ForEach(SurChainEnvironment.allCases.filter { $0 != .mainnet }) { env in
                     Text(env.displayName).tag(env)
                 }
             }
+
+            // Mainnet — coming soon (blurred / non-selectable for now).
+            HStack {
+                Label("Mainnet", systemImage: "lock.fill")
+                Spacer()
+                Text("Coming soon").font(.caption)
+            }
+            .foregroundColor(.secondary)
+            .opacity(0.45)
+            .allowsHitTesting(false)
 
             if config.network.environment == .custom {
                 TextField("REST URL (https://…:1317)", text: $customURL)

@@ -196,18 +196,23 @@ public struct KeystrokeSession: Codable, Equatable {
         return "#\(prefix)...\(suffix)"
     }
     
-    /// Get the typed text from the keystrokes
+    /// Get the typed text from the keystrokes.
+    /// Replays deletes as removing the previous character rather than a no-op —
+    /// this is the exact text that gets attested on-chain, so it must match what
+    /// actually ended up on screen, including corrections.
     public var typedText: String {
-        return signedKeystrokes.map { signedKeystroke -> String in
+        var result = ""
+        for signedKeystroke in signedKeystrokes {
             let key = signedKeystroke.keystroke.key
-            // Handle special keys
             switch key {
-            case "space": return " "
-            case "return", "enter": return "\n"
-            case "delete", "backspace": return ""
-            default: return key
+            case "space": result.append(" ")
+            case "return", "enter": result.append("\n")
+            case "delete", "backspace":
+                if !result.isEmpty { result.removeLast() }
+            default: result.append(key)
             }
-        }.joined()
+        }
+        return result
     }
 }
 
