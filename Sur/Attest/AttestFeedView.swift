@@ -21,6 +21,7 @@ enum FeedFilter: String, CaseIterable, Identifiable {
     case text = "Text"
     case keyboard = "Keyboard"
     case file = "File"
+    case voice = "Voice"
     var id: String { rawValue }
 }
 
@@ -28,12 +29,14 @@ enum AttestFeedItem: Identifiable {
     case text(AttestationItem)
     case keystroke(KeystrokeSession)
     case file(FileAttestation)
+    case voice(VoiceAttestation)
 
     var id: String {
         switch self {
         case .text(let item): return item.id.uuidString
         case .keystroke(let session): return session.sessionId
         case .file(let item): return item.id.uuidString
+        case .voice(let item): return item.id.uuidString
         }
     }
 
@@ -42,6 +45,7 @@ enum AttestFeedItem: Identifiable {
         case .text(let item): return item.createdAt
         case .keystroke(let session): return Date(timeIntervalSince1970: Double(session.startTimestamp) / 1000)
         case .file(let item): return item.createdAt
+        case .voice(let item): return item.createdAt
         }
     }
 
@@ -50,6 +54,7 @@ enum AttestFeedItem: Identifiable {
         case .text: return .text
         case .keystroke: return .keyboard
         case .file: return .file
+        case .voice: return .voice
         }
     }
 }
@@ -57,12 +62,14 @@ enum AttestFeedItem: Identifiable {
 struct AttestFeedView: View {
     @StateObject private var textStore = TextAttestationStore.shared
     @StateObject private var fileStore = FileAttestationStore.shared
+    @StateObject private var voiceStore = VoiceAttestationStore.shared
     @StateObject private var identity = SurChainIdentityManager.shared
     @ObservedObject private var tabRouter = TabRouter.shared
 
     @State private var showComposeMenu = false
     @State private var showTextCompose = false
     @State private var showFileCompose = false
+    @State private var showVoiceRecorder = false
     @State private var keystrokeSessions: [KeystrokeSession] = []
     @State private var selectedSession: KeystrokeSession?
     @State private var selectedFilter: FeedFilter = .all
@@ -72,6 +79,7 @@ struct AttestFeedView: View {
             textStore.items.map { .text($0) }
             + keystrokeSessions.map { .keystroke($0) }
             + fileStore.items.map { .file($0) }
+            + voiceStore.items.map { .voice($0) }
         return items
             .filter { selectedFilter == .all || $0.filter == selectedFilter }
             .sorted { $0.feedDate > $1.feedDate }
@@ -116,11 +124,11 @@ struct AttestFeedView: View {
                     switch option {
                     case .text: showTextCompose = true
                     case .file: showFileCompose = true
-                    case .voice: break // wired in the voice-recorder step
+                    case .voice: showVoiceRecorder = true
                     case .photo: tabRouter.selectedTab = .surCam
                     }
                 }
-                .presentationDetents([.height(300)])
+                .presentationDetents([.height(340)])
             }
             .sheet(isPresented: $showTextCompose) {
                 ComposeAttestationView { text, origin, citation in
@@ -131,6 +139,9 @@ struct AttestFeedView: View {
             .sheet(isPresented: $showFileCompose) {
                 FileAttestationView()
             }
+            .sheet(isPresented: $showVoiceRecorder) {
+                VoiceRecorderView()
+            }
             .sheet(item: $selectedSession) { session in
                 SessionDetailView(session: session)
             }
@@ -139,6 +150,7 @@ struct AttestFeedView: View {
             .task {
                 await textStore.submitPending()
                 await fileStore.submitPending()
+                await voiceStore.submitPending()
                 textStore.autoAttest(sessions: keystrokeSessions)
             }
         }
@@ -158,6 +170,10 @@ struct AttestFeedView: View {
         case .file(let attestation):
             FileAttestationRow(item: attestation) {
                 Task { await fileStore.submit(id: attestation.id) }
+            }
+        case .voice(let attestation):
+            VoiceAttestationRow(item: attestation) {
+                Task { await voiceStore.submit(id: attestation.id) }
             }
         }
     }
