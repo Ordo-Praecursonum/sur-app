@@ -4,6 +4,20 @@
 <dict>
 	<key>NSFaceIDUsageDescription</key>
 	<string>Sur uses Face ID to securely access your wallet and protect your private keys.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Sur Cam uses the camera to capture photos and videos that get a proof of authorship recorded on chain.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Sur uses the microphone to record video sound in Sur Cam and to record voice-memo attestations.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>Sur saves the photos and videos you capture in Sur Cam to your Photos library.</string>
+	<key>NSContactsUsageDescription</key>
+	<string>Sur reads your contacts so you can call them from the Calls tab.</string>
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<string>whatsapp</string>
+		<string>facetime</string>
+		<string>facetime-audio</string>
+	</array>
 	<!-- Allow plaintext HTTP to local/LAN endpoints (e.g. a local `ignite chain serve`
 	     at http://localhost:1317). Remote networks (devnet/testnet/mainnet) use HTTPS. -->
 	<key>NSAppTransportSecurity</key>
