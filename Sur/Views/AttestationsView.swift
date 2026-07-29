@@ -2,64 +2,16 @@
 //  AttestationsView.swift
 //  Sur
 //
-//  Create human-typed content attestations and view their on-chain status.
-//  Typing is timed (inter-keystroke intervals feed the human-typing proof). Each
-//  attestation is proved + submitted to the Sur Chain; submission runs in the
-//  background and pending/failed items can be resubmitted manually.
+//  Was previously its own standalone screen (List + toolbar); superseded by
+//  AttestFeedView, which now owns the list and renders these same rows
+//  alongside keystroke/camera/file/voice/call attestations in one unified
+//  feed. What's left here — AttestationRow and ComposeAttestationView — are
+//  reused as-is from AttestFeedView/ComposeMenuView.
 //
 
 import SwiftUI
 
-struct AttestationsView: View {
-    @StateObject private var store = TextAttestationStore.shared
-    @StateObject private var identity = SurChainIdentityManager.shared
-    @State private var showCompose = false
-
-    var body: some View {
-        List {
-            if identity.registeredUsername == nil {
-                Section {
-                    Label("Register this device first (Account → Sur Chain) to attest content.",
-                          systemImage: "exclamationmark.triangle")
-                        .font(.footnote)
-                        .foregroundColor(.secondary)
-                }
-            }
-            if store.items.isEmpty {
-                Section {
-                    Text("No attestations yet. Tap + to attest something you typed.")
-                        .font(.footnote)
-                        .foregroundColor(.secondary)
-                }
-            }
-            ForEach(store.items) { item in
-                AttestationRow(item: item) {
-                    Task { await store.submit(id: item.id) }
-                }
-            }
-            .onDelete { idx in
-                idx.map { store.items[$0].id }.forEach { store.remove(id: $0) }
-            }
-        }
-        .navigationTitle("Attestations")
-        .toolbar {
-            ToolbarItem(placement: .navigationBarTrailing) {
-                Button { showCompose = true } label: { Image(systemName: "plus") }
-                    .disabled(identity.registeredUsername == nil)
-            }
-        }
-        .sheet(isPresented: $showCompose) {
-            ComposeAttestationView { text, origin, citation in
-                store.enqueue(text: text, ikiValues: [], humanScore: 0, keystrokeCount: 0,
-                              origin: origin, citation: citation)
-            }
-        }
-        // Background pass: try to land anything still pending/failed.
-        .task { await store.submitPending() }
-    }
-}
-
-private struct AttestationRow: View {
+struct AttestationRow: View {
     let item: AttestationItem
     let onSubmit: () -> Void
 
@@ -126,7 +78,7 @@ private struct AttestationRow: View {
 /// device-signed DECLARATION of a chosen origin — it never claims the content was
 /// human-typed (only the Sur Keyboard can prove that). The user picks the origin
 /// and, for copied/imported content, a citation.
-private struct ComposeAttestationView: View {
+struct ComposeAttestationView: View {
     @Environment(\.dismiss) private var dismiss
     let onAttest: (_ text: String, _ origin: AttestationOrigin, _ citation: String?) -> Void
 
