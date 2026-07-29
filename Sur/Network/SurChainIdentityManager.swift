@@ -393,6 +393,40 @@ final class SurChainIdentityManager: ObservableObject {
 
     // MARK: - Token transfer
 
+    /// Generic sign/broadcast/confirm path for any pre-encoded message body —
+    /// factored out of `register`/`submitDeclaration`/`sendSur` so other chain
+    /// writers (e.g. ProvenanceManager) don't duplicate account-fetch,
+    /// chain-id resolution, signing, and confirmation-polling.
+    func broadcastSignedMessage(msgTypeURL: String, msgBody: Data, feeAmount: String, gasLimit: UInt64) async throws -> CosmosTransactionResult {
+        let acct = try surAccount()
+        let account = try await fetchAccountOrThrowFunding(acct.address)
+        let chainID = (try? await client.getChainID()) ?? config.network.chainID
+        let txBytes = try CosmosProtoTx.buildSignedTxBytes(
+            msgTypeURL: msgTypeURL,
+            msgBody: msgBody,
+            chainID: chainID,
+            accountNumber: account.accountNumber,
+            sequence: account.sequence,
+            privateKey: acct.privateKey,
+            feeDenom: config.network.feeDenom,
+            feeAmount: feeAmount,
+            gasLimit: gasLimit
+        )
+        let result = try await client.broadcastTx(txBytes)
+        guard result.code == 0 else {
+            throw mapSubmitError(CosmosError.chainError(result.code, result.rawLog ?? "broadcast failed"))
+        }
+        let confirmed = await recordAndConfirmTx(result.txHash)
+        if let confirmed, confirmed.code != 0 {
+            throw CosmosError.chainError(confirmed.code, confirmed.rawLog ?? "failed in block")
+        }
+        return CosmosTransactionResult(
+            txHash: result.txHash,
+            height: confirmed?.height ?? result.height,
+            code: 0, rawLog: result.rawLog, gasUsed: confirmed?.gasUsed ?? result.gasUsed
+        )
+    }
+
     /// Send `displayAmount` SUR (e.g. "1.5") to `toAddress` (a sur1… account).
     /// Returns the confirmed transaction result. Throws on invalid recipient /
     /// amount, insufficient balance, or chain error.

@@ -118,6 +118,22 @@ enum CosmosProtoTx {
         return w.data
     }
 
+    /// surchain.provenance.v1.MsgSubmitProvenanceNode { creator=1, content_hash_in=2,
+    /// content_hash_out=3, transformation_type=4, principal_id=5, sig=6 }.
+    /// Links two attested content hashes as a transformation edge (e.g. a Sur Cam
+    /// photo re-edited with a new filter) — see ProvenanceManager.
+    static func encodeMsgSubmitProvenanceNode(creator: String, contentHashIn: Data, contentHashOut: Data,
+                                              transformationType: String, principalID: String, sig: Data) -> Data {
+        var w = Writer()
+        w.putString(1, creator)
+        w.putBytes(2, contentHashIn)
+        w.putBytes(3, contentHashOut)
+        w.putString(4, transformationType)
+        w.putString(5, principalID)
+        w.putBytes(6, sig)
+        return w.data
+    }
+
     /// cosmos.bank.v1beta1.MsgSend { from_address=1, to_address=2, amount=3 [Coin] }.
     /// `amount` is the integer micro-denom amount as a string (e.g. "1500000").
     static func encodeMsgSend(from: String, to: String, denom: String, amount: String) -> Data {
