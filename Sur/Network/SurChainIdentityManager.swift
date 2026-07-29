@@ -314,11 +314,20 @@ final class SurChainIdentityManager: ObservableObject {
     /// SHA-256(content_hash ‖ origin ‖ citation ‖ nullifier); the chain verifies it.
     @discardableResult
     func submitDeclaration(text: String, origin: String, citation: String) async throws -> CosmosTransactionResult {
+        let contentHash = Data(SHA256.hash(data: Data(text.utf8)))
+        return try await submitDeclaration(contentHash: contentHash, origin: origin, citation: citation)
+    }
+
+    /// Shared declaration path for any content that isn't typed text — Sur Cam
+    /// photos/videos, file attestations, voice recordings, call-initiation
+    /// records. Signs and broadcasts a device-signed `MsgSubmitAttestation`
+    /// (no ZK proof) exactly like the `text:` overload above, just starting
+    /// from an already-computed hash instead of hashing text internally.
+    func submitDeclaration(contentHash: Data, origin: String, citation: String) async throws -> CosmosTransactionResult {
         let deviceID = try ensureDeviceIdentity()
         guard let devicePub = DeviceIDManager.shared.compressedDevicePublicKey() else {
             throw CosmosError.chainError(-1, "device key unavailable")
         }
-        let contentHash = Data(SHA256.hash(data: Data(text.utf8)))
 
         // Unique, content-bound nullifier (replay protection).
         var nbase = Data(deviceID.utf8)
