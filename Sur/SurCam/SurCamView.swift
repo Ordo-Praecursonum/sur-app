@@ -3,10 +3,12 @@
 //  Sur
 //
 //  Sur Cam tab root — the app's home screen (Snapchat-style: camera first).
-//  This step is chrome only: live preview, filter carousel (filter name
-//  label since preview itself stays unfiltered), Photo/Video mode toggle,
-//  QR/flash/flip controls, and a shutter button wired to real capture —
-//  the capture → hash → attest → save pipeline lands in the next step.
+//  Live preview, filter carousel (filter name label since preview itself
+//  stays unfiltered), Photo/Video mode toggle, QR/flash/flip controls, and
+//  a shutter button wired through MediaCaptureProcessor →
+//  CaptureAttestationCoordinator → CapturePreviewView. QR-sticker
+//  compositing and post-capture lineage edits land in the next step — the
+//  QR toggle exists in chrome already but doesn't do anything yet.
 //
 
 import SwiftUI
@@ -23,6 +25,10 @@ struct SurCamView: View {
     @State private var qrEnabled = false
     @State private var isCapturing = false
     @State private var captureMessage: String?
+    @State private var previewImage: UIImage?
+    @State private var previewIsVideo = false
+    @State private var previewAttestationId: UUID?
+    @State private var showPreview = false
 
     var body: some View {
         ZStack {
@@ -68,6 +74,11 @@ struct SurCamView: View {
         }
         .onAppear { camera.configureIfNeeded() }
         .onDisappear { camera.stopSession() }
+        .fullScreenCover(isPresented: $showPreview) {
+            if let attestationId = previewAttestationId {
+                CapturePreviewView(image: previewImage, isVideo: previewIsVideo, attestationId: attestationId)
+            }
+        }
     }
 
     private var topBar: some View {
@@ -173,11 +184,23 @@ struct SurCamView: View {
             switch mode {
             case .photo:
                 let data = try await camera.capturePhoto()
-                captureMessage = "Captured \(data.count / 1024) KB — attest pipeline lands next"
+                let processed = try MediaCaptureProcessor.processPhoto(rawData: data, filter: selectedFilter)
+                let id = CaptureAttestationCoordinator.attestPhoto(processed)
+                previewImage = processed.finalImageForSaving
+                previewIsVideo = false
+                previewAttestationId = id
+                showPreview = true
+                captureMessage = nil
             case .video:
                 if camera.isRecordingVideo {
                     let url = try await camera.stopRecordingVideo()
-                    captureMessage = "Recorded \(url.lastPathComponent) — attest pipeline lands next"
+                    let processed = try MediaCaptureProcessor.processVideo(fileURL: url)
+                    let id = CaptureAttestationCoordinator.attestVideo(processed)
+                    previewImage = nil
+                    previewIsVideo = true
+                    previewAttestationId = id
+                    showPreview = true
+                    captureMessage = nil
                 } else {
                     _ = camera.startRecordingVideo()
                 }
