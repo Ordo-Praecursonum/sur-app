@@ -11,6 +11,11 @@ import SwiftUI
 struct CapturedMediaAttestationRow: View {
     let item: CapturedMediaAttestation
     let onSubmit: () -> Void
+    var onEdit: (() -> Void)?
+
+    private var canEdit: Bool {
+        item.kind == .photo && item.status == .submitted && item.localAssetIdentifier != nil && onEdit != nil
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -40,6 +45,11 @@ struct CapturedMediaAttestationRow: View {
                 }
                 if item.status == .pending || item.status == .failed {
                     Button("Submit", action: onSubmit)
+                        .font(.caption)
+                        .buttonStyle(.borderless)
+                }
+                if canEdit, let onEdit {
+                    Button("Edit", action: onEdit)
                         .font(.caption)
                         .buttonStyle(.borderless)
                 }

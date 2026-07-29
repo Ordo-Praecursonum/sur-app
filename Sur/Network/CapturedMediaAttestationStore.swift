@@ -24,6 +24,10 @@ struct CapturedMediaAttestation: Codable, Identifiable, Equatable {
     var txHash: String?
     var txHeight: Int64?
     var error: String?
+    /// PHAsset.localIdentifier of the saved Photos asset, if the save
+    /// succeeded — lets EditCapturedPhotoView re-fetch the original image
+    /// bytes to produce a lineage edit. Nil if the save failed/was denied.
+    var localAssetIdentifier: String?
 }
 
 @MainActor
@@ -44,11 +48,13 @@ final class CapturedMediaAttestationStore: ObservableObject {
 
     @discardableResult
     func enqueue(kind: CapturedMediaAttestation.Kind, contentHash: Data,
-                 filterApplied: String?, qrApplied: Bool, citation: String) -> UUID {
+                 filterApplied: String?, qrApplied: Bool, citation: String,
+                 localAssetIdentifier: String? = nil) -> UUID {
         let item = CapturedMediaAttestation(
             id: UUID(), kind: kind, createdAt: Date(), contentHash: contentHash,
             filterApplied: filterApplied, qrApplied: qrApplied, citation: citation,
-            status: .pending, txHash: nil, txHeight: nil, error: nil
+            status: .pending, txHash: nil, txHeight: nil, error: nil,
+            localAssetIdentifier: localAssetIdentifier
         )
         items.insert(item, at: 0)
         persist()

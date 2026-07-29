@@ -185,8 +185,16 @@ struct SurCamView: View {
             case .photo:
                 let data = try await camera.capturePhoto()
                 let processed = try MediaCaptureProcessor.processPhoto(rawData: data, filter: selectedFilter)
-                let id = CaptureAttestationCoordinator.attestPhoto(processed)
-                previewImage = processed.finalImageForSaving
+                // Hash is computed above from the pre-sticker image — the QR
+                // (if enabled) is composited only into what gets saved/shown,
+                // never into what's hashed.
+                var finalImage = processed.finalImageForSaving
+                if qrEnabled {
+                    let link = ProofLink.build(contentHash: processed.contentHash)
+                    finalImage = QRStickerComposer.composite(baseImage: finalImage, link: link)
+                }
+                let id = await CaptureAttestationCoordinator.attestPhoto(processed, finalImage: finalImage, qrApplied: qrEnabled)
+                previewImage = finalImage
                 previewIsVideo = false
                 previewAttestationId = id
                 showPreview = true
@@ -195,7 +203,7 @@ struct SurCamView: View {
                 if camera.isRecordingVideo {
                     let url = try await camera.stopRecordingVideo()
                     let processed = try MediaCaptureProcessor.processVideo(fileURL: url)
-                    let id = CaptureAttestationCoordinator.attestVideo(processed)
+                    let id = await CaptureAttestationCoordinator.attestVideo(processed)
                     previewImage = nil
                     previewIsVideo = true
                     previewAttestationId = id

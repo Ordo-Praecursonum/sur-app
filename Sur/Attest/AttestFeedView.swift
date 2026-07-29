@@ -78,6 +78,7 @@ struct AttestFeedView: View {
     @State private var showVoiceRecorder = false
     @State private var keystrokeSessions: [KeystrokeSession] = []
     @State private var selectedSession: KeystrokeSession?
+    @State private var editingMedia: CapturedMediaAttestation?
     @State private var selectedFilter: FeedFilter = .all
 
     private var feedItems: [AttestFeedItem] {
@@ -152,6 +153,9 @@ struct AttestFeedView: View {
             .sheet(item: $selectedSession) { session in
                 SessionDetailView(session: session)
             }
+            .sheet(item: $editingMedia) { attestation in
+                EditCapturedPhotoView(original: attestation)
+            }
             .onAppear { loadKeystrokeSessions() }
             // Background pass: try to land anything still pending/failed.
             .task {
@@ -176,9 +180,11 @@ struct AttestFeedView: View {
                 .contentShape(Rectangle())
                 .onTapGesture { selectedSession = session }
         case .media(let attestation):
-            CapturedMediaAttestationRow(item: attestation) {
+            CapturedMediaAttestationRow(item: attestation, onSubmit: {
                 Task { await mediaStore.submit(id: attestation.id) }
-            }
+            }, onEdit: {
+                editingMedia = attestation
+            })
         case .file(let attestation):
             FileAttestationRow(item: attestation) {
                 Task { await fileStore.submit(id: attestation.id) }
