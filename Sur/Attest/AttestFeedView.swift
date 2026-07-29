@@ -20,6 +20,7 @@ enum FeedFilter: String, CaseIterable, Identifiable {
     case all = "All"
     case text = "Text"
     case keyboard = "Keyboard"
+    case camera = "Camera"
     case file = "File"
     case voice = "Voice"
     var id: String { rawValue }
@@ -28,6 +29,7 @@ enum FeedFilter: String, CaseIterable, Identifiable {
 enum AttestFeedItem: Identifiable {
     case text(AttestationItem)
     case keystroke(KeystrokeSession)
+    case media(CapturedMediaAttestation)
     case file(FileAttestation)
     case voice(VoiceAttestation)
 
@@ -35,6 +37,7 @@ enum AttestFeedItem: Identifiable {
         switch self {
         case .text(let item): return item.id.uuidString
         case .keystroke(let session): return session.sessionId
+        case .media(let item): return item.id.uuidString
         case .file(let item): return item.id.uuidString
         case .voice(let item): return item.id.uuidString
         }
@@ -44,6 +47,7 @@ enum AttestFeedItem: Identifiable {
         switch self {
         case .text(let item): return item.createdAt
         case .keystroke(let session): return Date(timeIntervalSince1970: Double(session.startTimestamp) / 1000)
+        case .media(let item): return item.createdAt
         case .file(let item): return item.createdAt
         case .voice(let item): return item.createdAt
         }
@@ -53,6 +57,7 @@ enum AttestFeedItem: Identifiable {
         switch self {
         case .text: return .text
         case .keystroke: return .keyboard
+        case .media: return .camera
         case .file: return .file
         case .voice: return .voice
         }
@@ -61,6 +66,7 @@ enum AttestFeedItem: Identifiable {
 
 struct AttestFeedView: View {
     @StateObject private var textStore = TextAttestationStore.shared
+    @StateObject private var mediaStore = CapturedMediaAttestationStore.shared
     @StateObject private var fileStore = FileAttestationStore.shared
     @StateObject private var voiceStore = VoiceAttestationStore.shared
     @StateObject private var identity = SurChainIdentityManager.shared
@@ -78,6 +84,7 @@ struct AttestFeedView: View {
         let items: [AttestFeedItem] =
             textStore.items.map { .text($0) }
             + keystrokeSessions.map { .keystroke($0) }
+            + mediaStore.items.map { .media($0) }
             + fileStore.items.map { .file($0) }
             + voiceStore.items.map { .voice($0) }
         return items
@@ -149,6 +156,7 @@ struct AttestFeedView: View {
             // Background pass: try to land anything still pending/failed.
             .task {
                 await textStore.submitPending()
+                await mediaStore.submitPending()
                 await fileStore.submitPending()
                 await voiceStore.submitPending()
                 textStore.autoAttest(sessions: keystrokeSessions)
@@ -167,6 +175,10 @@ struct AttestFeedView: View {
             SessionRowView(session: session, attestStore: textStore)
                 .contentShape(Rectangle())
                 .onTapGesture { selectedSession = session }
+        case .media(let attestation):
+            CapturedMediaAttestationRow(item: attestation) {
+                Task { await mediaStore.submit(id: attestation.id) }
+            }
         case .file(let attestation):
             FileAttestationRow(item: attestation) {
                 Task { await fileStore.submit(id: attestation.id) }
@@ -207,6 +219,6 @@ struct AttestFeedView: View {
     }
 }
 
-extension KeystrokeSession: @retroactive Identifiable {
+extension KeystrokeSession: Identifiable {
     public var id: String { sessionId }
 }
