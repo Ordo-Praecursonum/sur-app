@@ -23,13 +23,13 @@ enum MainTab: Hashable {
 }
 
 struct MainTabView: View {
-    @State private var selectedTab: MainTab = .surCam
+    @StateObject private var router = TabRouter.shared
     @State private var showGetStarted = false
 
     private static let getStartedShownKey = "onboarding.getStarted.shown"
 
     var body: some View {
-        TabView(selection: $selectedTab) {
+        TabView(selection: $router.selectedTab) {
             SurCamView()
                 .tabItem { Label("Sur Cam", systemImage: "camera.fill") }
                 .tag(MainTab.surCam)
