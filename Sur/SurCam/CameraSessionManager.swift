@@ -8,7 +8,7 @@
 //  hardware) rather than crashing or silently failing.
 //
 
-import AVFoundation
+@preconcurrency import AVFoundation
 import UIKit
 
 enum CameraAvailability {
@@ -25,15 +25,20 @@ final class CameraSessionManager: NSObject, ObservableObject {
     @Published var isUsingFrontCamera = false
     @Published var isFlashOn = false
 
-    let session = AVCaptureSession()
-
-    private var videoInput: AVCaptureDeviceInput?
-    private let photoOutput = AVCapturePhotoOutput()
-    private let movieOutput = AVCaptureMovieFileOutput()
+    // AVFoundation recommends configuring/starting a capture session on a
+    // dedicated background queue (beginConfiguration/startRunning can block).
+    // These are only ever touched from `sessionQueue`'s closures (or read as
+    // an immutable reference by CameraPreviewView) — `nonisolated(unsafe)`
+    // opts them out of this class's MainActor isolation so those background
+    // closures compile under strict concurrency, while every @Published
+    // property above stays properly MainActor-protected for SwiftUI.
+    nonisolated(unsafe) let session = AVCaptureSession()
+    nonisolated(unsafe) private var videoInput: AVCaptureDeviceInput?
+    nonisolated(unsafe) private let photoOutput = AVCapturePhotoOutput()
+    nonisolated(unsafe) private let movieOutput = AVCaptureMovieFileOutput()
+    nonisolated(unsafe) private var photoContinuation: CheckedContinuation<Data, Error>?
+    nonisolated(unsafe) private var videoContinuation: CheckedContinuation<URL, Error>?
     private let sessionQueue = DispatchQueue(label: "com.ordo.sur.surcam.session")
-
-    private var photoContinuation: CheckedContinuation<Data, Error>?
-    private var videoContinuation: CheckedContinuation<URL, Error>?
 
     func configureIfNeeded() {
         guard AVCaptureDevice.default(for: .video) != nil else {
@@ -146,17 +151,18 @@ final class CameraSessionManager: NSObject, ObservableObject {
 }
 
 extension CameraSessionManager: AVCapturePhotoCaptureDelegate {
+    // Fires on an AVFoundation-managed queue, not necessarily MainActor.
+    // CheckedContinuation.resume is safe to call from any thread, so only
+    // the (nonisolated(unsafe)) continuation itself is touched here.
     nonisolated func photoOutput(_ output: AVCapturePhotoOutput, didFinishProcessingPhoto photo: AVCapturePhoto, error: Error?) {
-        Task { @MainActor in
-            guard let continuation = self.photoContinuation else { return }
-            self.photoContinuation = nil
-            if let error {
-                continuation.resume(throwing: error)
-            } else if let data = photo.fileDataRepresentation() {
-                continuation.resume(returning: data)
-            } else {
-                continuation.resume(throwing: CosmosError.chainError(-1, "photo capture produced no data"))
-            }
+        guard let continuation = photoContinuation else { return }
+        photoContinuation = nil
+        if let error {
+            continuation.resume(throwing: error)
+        } else if let data = photo.fileDataRepresentation() {
+            continuation.resume(returning: data)
+        } else {
+            continuation.resume(throwing: CosmosError.chainError(-1, "photo capture produced no data"))
         }
     }
 }
@@ -164,15 +170,13 @@ extension CameraSessionManager: AVCapturePhotoCaptureDelegate {
 extension CameraSessionManager: AVCaptureFileOutputRecordingDelegate {
     nonisolated func fileOutput(_ output: AVCaptureFileOutput, didFinishRecordingTo outputFileURL: URL,
                                  from connections: [AVCaptureConnection], error: Error?) {
-        Task { @MainActor in
-            self.isRecordingVideo = false
-            guard let continuation = self.videoContinuation else { return }
-            self.videoContinuation = nil
-            if let error {
-                continuation.resume(throwing: error)
-            } else {
-                continuation.resume(returning: outputFileURL)
-            }
+        Task { @MainActor in self.isRecordingVideo = false }
+        guard let continuation = videoContinuation else { return }
+        videoContinuation = nil
+        if let error {
+            continuation.resume(throwing: error)
+        } else {
+            continuation.resume(returning: outputFileURL)
         }
     }
 }
