@@ -23,6 +23,7 @@ enum FeedFilter: String, CaseIterable, Identifiable {
     case camera = "Camera"
     case file = "File"
     case voice = "Voice"
+    case calls = "Calls"
     var id: String { rawValue }
 }
 
@@ -32,6 +33,7 @@ enum AttestFeedItem: Identifiable {
     case media(CapturedMediaAttestation)
     case file(FileAttestation)
     case voice(VoiceAttestation)
+    case call(CallAttestation)
 
     var id: String {
         switch self {
@@ -40,6 +42,7 @@ enum AttestFeedItem: Identifiable {
         case .media(let item): return item.id.uuidString
         case .file(let item): return item.id.uuidString
         case .voice(let item): return item.id.uuidString
+        case .call(let item): return item.id.uuidString
         }
     }
 
@@ -50,6 +53,7 @@ enum AttestFeedItem: Identifiable {
         case .media(let item): return item.createdAt
         case .file(let item): return item.createdAt
         case .voice(let item): return item.createdAt
+        case .call(let item): return item.createdAt
         }
     }
 
@@ -60,6 +64,7 @@ enum AttestFeedItem: Identifiable {
         case .media: return .camera
         case .file: return .file
         case .voice: return .voice
+        case .call: return .calls
         }
     }
 }
@@ -69,6 +74,7 @@ struct AttestFeedView: View {
     @StateObject private var mediaStore = CapturedMediaAttestationStore.shared
     @StateObject private var fileStore = FileAttestationStore.shared
     @StateObject private var voiceStore = VoiceAttestationStore.shared
+    @StateObject private var callStore = CallAttestationStore.shared
     @StateObject private var identity = SurChainIdentityManager.shared
     @ObservedObject private var tabRouter = TabRouter.shared
 
@@ -88,6 +94,7 @@ struct AttestFeedView: View {
             + mediaStore.items.map { .media($0) }
             + fileStore.items.map { .file($0) }
             + voiceStore.items.map { .voice($0) }
+            + callStore.items.map { .call($0) }
         return items
             .filter { selectedFilter == .all || $0.filter == selectedFilter }
             .sorted { $0.feedDate > $1.feedDate }
@@ -163,6 +170,7 @@ struct AttestFeedView: View {
                 await mediaStore.submitPending()
                 await fileStore.submitPending()
                 await voiceStore.submitPending()
+                await callStore.submitPending()
                 textStore.autoAttest(sessions: keystrokeSessions)
             }
         }
@@ -192,6 +200,10 @@ struct AttestFeedView: View {
         case .voice(let attestation):
             VoiceAttestationRow(item: attestation) {
                 Task { await voiceStore.submit(id: attestation.id) }
+            }
+        case .call(let attestation):
+            CallAttestationRow(item: attestation) {
+                Task { await callStore.submit(id: attestation.id) }
             }
         }
     }
