@@ -210,6 +210,13 @@ class KeyboardViewController: UIInputViewController {
     /// revoked, this stays stale at true until the extension is opened again
     /// with access restored, which is an acceptable gap for a UX hint.
     private static let fullAccessKey = "keyboard.hasFullAccess"
+    /// Set (from the "Don't show this again" checkbox) once the first-run
+    /// explainer has been dismissed. The app's Settings tab exposes a "Show
+    /// keyboard tutorial again" toggle bound to the same key — the overlay
+    /// itself can't offer an "uncheck" control since it disappears once
+    /// dismissed.
+    private static let tutorialDismissedKey = "keyboard.tutorial.dismissed"
+    private var tutorialOverlayView: KeyboardTutorialOverlay?
 
     // MARK: - Properties
     private var keyboardView: UIView!
@@ -431,6 +438,35 @@ class KeyboardViewController: UIInputViewController {
 
         setupKeyboardView()
         KBLog.lifecycle.log("KeyboardViewController viewDidLoad: setup complete")
+
+        // First-run explainer — dispatched async, after the keyboard's own
+        // UI has been built above, so it never delays first-frame render
+        // (see the documented multi-second startup-freeze incident this
+        // extension's storage rewrite fixed).
+        DispatchQueue.main.async { [weak self] in
+            self?.showTutorialOverlayIfNeeded()
+        }
+    }
+
+    private func showTutorialOverlayIfNeeded() {
+        let dismissed = UserDefaults(suiteName: Self.appGroupID)?.bool(forKey: Self.tutorialDismissedKey) ?? false
+        guard !dismissed else { return }
+        let overlay = KeyboardTutorialOverlay { [weak self] dontShowAgain in
+            if dontShowAgain {
+                UserDefaults(suiteName: Self.appGroupID)?.set(true, forKey: Self.tutorialDismissedKey)
+            }
+            self?.tutorialOverlayView?.removeFromSuperview()
+            self?.tutorialOverlayView = nil
+        }
+        overlay.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(overlay)
+        NSLayoutConstraint.activate([
+            overlay.topAnchor.constraint(equalTo: view.topAnchor),
+            overlay.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            overlay.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            overlay.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+        ])
+        tutorialOverlayView = overlay
     }
     
     override func viewWillLayoutSubviews() {
