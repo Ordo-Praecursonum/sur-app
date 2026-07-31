@@ -16,11 +16,24 @@ class AppSettings: ObservableObject {
     /// dismissed, so it can't offer an "uncheck" control itself) — unchecking
     /// happens here, via the "Show keyboard tutorial again" toggle in Settings.
     private let keyboardTutorialDismissedKey = "keyboard.tutorial.dismissed"
+    private let surCamLogoWatermarkKey = "surcam.logoWatermarkEnabled"
 
     @Published var isHapticFeedbackEnabled: Bool {
         didSet {
             if let sharedDefaults = UserDefaults(suiteName: "group.com.ordo.sure.Sur") {
                 sharedDefaults.set(isHapticFeedbackEnabled, forKey: hapticFeedbackKey)
+            }
+        }
+    }
+
+    /// The QR-code proof sticker is always applied to Sur Cam photos — it's
+    /// how a photo's on-chain proof travels with the image itself, so it
+    /// isn't user-toggleable. The Sur logo watermark is purely cosmetic
+    /// branding, so unlike the QR sticker it CAN be turned off here.
+    @Published var surCamLogoWatermarkEnabled: Bool {
+        didSet {
+            if let sharedDefaults = UserDefaults(suiteName: "group.com.ordo.sure.Sur") {
+                sharedDefaults.set(surCamLogoWatermarkEnabled, forKey: surCamLogoWatermarkKey)
             }
         }
     }
@@ -48,6 +61,7 @@ class AppSettings: ObservableObject {
         let sharedDefaults = UserDefaults(suiteName: "group.com.ordo.sure.Sur")
         self.isHapticFeedbackEnabled = sharedDefaults?.object(forKey: hapticFeedbackKey) as? Bool ?? true
         self.keyboardTutorialDismissed = sharedDefaults?.object(forKey: keyboardTutorialDismissedKey) as? Bool ?? false
+        self.surCamLogoWatermarkEnabled = sharedDefaults?.object(forKey: surCamLogoWatermarkKey) as? Bool ?? true
     }
 }
 

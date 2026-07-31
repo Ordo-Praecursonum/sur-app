@@ -94,8 +94,29 @@ struct PhotoGalleryView: View {
 }
 
 private struct CaptureDetailView: View {
-    let item: CapturedMediaAttestation
+    @ObservedObject private var store = CapturedMediaAttestationStore.shared
     @Environment(\.dismiss) private var dismiss
+    @State private var displayedID: UUID
+    @State private var showEdit = false
+    @State private var showDetails = false
+    private let initialItem: CapturedMediaAttestation
+
+    init(item: CapturedMediaAttestation) {
+        self.initialItem = item
+        _displayedID = State(initialValue: item.id)
+    }
+
+    /// Looked up live from the store (not the frozen `initialItem`) so the
+    /// status badge keeps updating as it submits, and so — after an edit —
+    /// switching `displayedID` shows the new attestation in place instead of
+    /// the caller needing to go find it in the grid themselves.
+    private var item: CapturedMediaAttestation {
+        store.items.first(where: { $0.id == displayedID }) ?? initialItem
+    }
+
+    private var canEdit: Bool {
+        item.kind == .photo && item.status == .submitted && CapturedImageCache.exists(id: item.id)
+    }
 
     var body: some View {
         ZStack {
@@ -117,6 +138,12 @@ private struct CaptureDetailView: View {
 
             VStack {
                 Spacer()
+                if showDetails {
+                    detailsPanel
+                        .padding(.bottom, 8)
+                }
+                actionRow
+                    .padding(.bottom, 8)
                 statusBar
                     .padding(.bottom, 40)
             }
@@ -132,6 +159,95 @@ private struct CaptureDetailView: View {
             }
             .padding()
         }
+        .sheet(isPresented: $showEdit) {
+            EditCapturedPhotoView(original: item) { newID in
+                displayedID = newID
+            }
+        }
+    }
+
+    private var actionRow: some View {
+        HStack(spacing: 10) {
+            if canEdit {
+                pillButton(label: "Edit", icon: "slider.horizontal.3") { showEdit = true }
+            }
+            pillButton(label: showDetails ? "Hide Details" : "Details", icon: "info.circle") {
+                withAnimation { showDetails.toggle() }
+            }
+        }
+    }
+
+    private func pillButton(label: String, icon: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Label(label, systemImage: icon)
+                .font(.subheadline.weight(.semibold))
+                .foregroundColor(.white)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+                .background(.black.opacity(0.5))
+                .clipShape(Capsule())
+        }
+    }
+
+    private var detailsPanel: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            detailRow(label: "Content hash", value: hex(item.contentHash), copyValue: hex(item.contentHash, full: true))
+            if item.status == .submitted {
+                if let tx = item.txHash {
+                    detailRow(label: "Transaction", value: shorten(tx), copyValue: tx)
+                }
+                proofLinkRow
+            }
+            if let filter = item.filterApplied {
+                detailRow(label: "Filter", value: filter.capitalized, copyValue: nil)
+            }
+            if item.qrApplied {
+                detailRow(label: "QR sticker", value: "Applied", copyValue: nil)
+            }
+        }
+        .padding(14)
+        .background(.black.opacity(0.6))
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .padding(.horizontal, 24)
+    }
+
+    private func detailRow(label: String, value: String, copyValue: String?) -> some View {
+        HStack(spacing: 8) {
+            Text(label)
+                .foregroundColor(.white.opacity(0.6))
+            Spacer()
+            Text(value)
+                .font(.system(.footnote, design: .monospaced))
+                .foregroundColor(.white)
+                .lineLimit(1)
+            if let copyValue {
+                Button {
+                    Pasteboard.copy(copyValue)
+                } label: {
+                    Image(systemName: "doc.on.doc")
+                        .foregroundColor(.white.opacity(0.8))
+                }
+            }
+        }
+        .font(.footnote)
+    }
+
+    private var proofLinkRow: some View {
+        let link = ProofLink.build(contentHash: item.contentHash)
+        return HStack(spacing: 8) {
+            Text("Proof link")
+                .foregroundColor(.white.opacity(0.6))
+            Spacer()
+            Link("Open", destination: link)
+                .foregroundColor(Theme.brandOrange)
+            Button {
+                Pasteboard.copy(link.absoluteString)
+            } label: {
+                Image(systemName: "doc.on.doc")
+                    .foregroundColor(.white.opacity(0.8))
+            }
+        }
+        .font(.footnote)
     }
 
     private var statusBar: some View {
@@ -155,5 +271,16 @@ private struct CaptureDetailView: View {
         .padding(.vertical, 10)
         .background(.black.opacity(0.6))
         .clipShape(Capsule())
+    }
+
+    private func hex(_ data: Data, full: Bool = false) -> String {
+        let hexString = data.map { String(format: "%02x", $0) }.joined()
+        if full || hexString.count <= 16 { return hexString }
+        return "\(hexString.prefix(8))…\(hexString.suffix(6))"
+    }
+
+    private func shorten(_ s: String) -> String {
+        guard s.count > 12 else { return s }
+        return "\(s.prefix(8))…\(s.suffix(4))"
     }
 }

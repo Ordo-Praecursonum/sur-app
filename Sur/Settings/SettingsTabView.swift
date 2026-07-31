@@ -76,6 +76,22 @@ struct SettingsTabView: View {
                 }
 
                 Section {
+                    Toggle(isOn: $settings.surCamLogoWatermarkEnabled) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Sur logo watermark")
+                            Text("A small translucent Sur logo added to saved photos, next to the QR proof sticker.")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                    .tint(Theme.brandOrange)
+                } header: {
+                    Text("Sur Cam")
+                } footer: {
+                    Text("The QR proof sticker is always included — it's how a photo's on-chain proof link travels with the image.")
+                }
+
+                Section {
                     HStack {
                         Label("Security", systemImage: "lock.shield")
                         Spacer()

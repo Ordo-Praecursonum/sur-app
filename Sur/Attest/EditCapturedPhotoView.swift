@@ -21,6 +21,11 @@ import CryptoKit
 
 struct EditCapturedPhotoView: View {
     let original: CapturedMediaAttestation
+    /// Called with the newly-created attestation's id right before dismiss,
+    /// so a caller showing `original` (e.g. the gallery detail view) can
+    /// switch to displaying the edited result in place instead of the user
+    /// having to go find it themselves.
+    var onSaved: ((UUID) -> Void)?
 
     @Environment(\.dismiss) private var dismiss
     @State private var sourceImage: UIImage?
@@ -136,10 +141,17 @@ struct EditCapturedPhotoView: View {
             }
             let newHash = Data(SHA256.hash(data: pngData))
             let capture = ProcessedCapture(finalImageForSaving: finalImage, contentHash: newHash, filterApplied: selectedFilter)
-            _ = await CaptureAttestationCoordinator.attestPhoto(capture, finalImage: finalImage, qrApplied: false)
+            let watermarked = PhotoWatermarkPipeline.apply(
+                to: finalImage, contentHash: newHash,
+                includeLogoWatermark: AppSettings.shared.surCamLogoWatermarkEnabled
+            )
+            let newId = await CaptureAttestationCoordinator.attestPhoto(
+                capture, finalImage: watermarked, qrApplied: true, citation: "\(original.citation) — edited"
+            )
             try await ProvenanceManager.shared.submitProvenanceNode(
                 hashIn: original.contentHash, hashOut: newHash, transformationType: "filter:\(selectedFilter.rawValue)"
             )
+            onSaved?(newId)
             dismiss()
         } catch {
             errorMessage = error.localizedDescription

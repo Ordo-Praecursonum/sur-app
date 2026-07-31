@@ -3,18 +3,21 @@
 //  Sur
 //
 //  Sur Cam tab root — the app's home screen (Snapchat-style: camera first).
-//  Live preview, Photo/Video mode toggle, QR/flash/flip controls, a gallery
+//  Live preview, Photo/Video mode toggle, flash/flip controls, a gallery
 //  thumbnail, and a shutter button.
 //
-//  Photo capture is two-phase: the shutter only captures + orients the raw
-//  image (MediaCaptureProcessor.decodeOrientedImage), then PhotoReviewView
-//  shows the actual photo so the user picks a filter against what they
-//  really shot — there's no filter picker here before the shutter, since
-//  the live preview stays unfiltered and picking blind against it was
-//  confusing (and easy to silently ignore once chosen). Once confirmed in
-//  review, the final render + hash + Photos save + chain submission all run
-//  in the background (finalizeAndAttestPhoto) so the camera is immediately
-//  ready for the next shot — nothing here blocks on attestation.
+//  Tapping the shutter is a single, no-confirmation action: capture, orient,
+//  hash, watermark, save, and submit all happen in the background
+//  (finalizeAndAttestPhoto) while the camera stays live for the next shot. No
+//  filter is applied at capture time — filters only ever happen later, as a
+//  deliberate re-edit from the gallery or Attest feed (EditCapturedPhotoView),
+//  which records the change as a new lineage edge on chain rather than
+//  something silently baked into the original capture.
+//
+//  Every saved photo always gets the QR proof sticker (see
+//  PhotoWatermarkPipeline) — that's how the on-chain proof link travels with
+//  the image, so it isn't a toggle. The Sur logo watermark next to it is
+//  optional branding the user can turn off in Settings.
 //
 
 import CoreImage
@@ -25,19 +28,11 @@ enum SurCamMode: String, CaseIterable {
     case video = "Video"
 }
 
-private struct PendingPhotoCapture: Identifiable {
-    let id = UUID()
-    let orientedImage: CIImage
-    let qrEnabled: Bool
-}
-
 struct SurCamView: View {
     @StateObject private var camera = CameraSessionManager()
     @State private var mode: SurCamMode = .photo
-    @State private var qrEnabled = false
     @State private var isCapturing = false
     @State private var captureMessage: String?
-    @State private var pendingPhoto: PendingPhotoCapture?
     @State private var lastThumbnail: UIImage?
     @State private var showGallery = false
 
@@ -90,20 +85,6 @@ struct SurCamView: View {
             }
         }
         .onDisappear { camera.stopSession() }
-        .fullScreenCover(item: $pendingPhoto) { pending in
-            PhotoReviewView(orientedImage: pending.orientedImage) {
-                pendingPhoto = nil
-            } onUsePhoto: { filter, citation in
-                pendingPhoto = nil
-                captureMessage = "Saved. Attesting…"
-                Task {
-                    await finalizeAndAttestPhoto(
-                        orientedImage: pending.orientedImage, filter: filter,
-                        qrEnabled: pending.qrEnabled, citation: citation
-                    )
-                }
-            }
-        }
         .sheet(isPresented: $showGallery) {
             PhotoGalleryView()
         }
@@ -125,17 +106,6 @@ struct SurCamView: View {
             }
 
             HStack {
-                Button {
-                    qrEnabled.toggle()
-                } label: {
-                    Label("QR", systemImage: qrEnabled ? "qrcode.viewfinder" : "qrcode")
-                        .labelStyle(.iconOnly)
-                        .font(.title3)
-                        .foregroundColor(qrEnabled ? Theme.brandOrange : .white)
-                        .padding(10)
-                        .background(.black.opacity(0.35))
-                        .clipShape(Circle())
-                }
                 Spacer()
                 Button {
                     camera.isFlashOn.toggle()
@@ -235,8 +205,8 @@ struct SurCamView: View {
             do {
                 let data = try await camera.capturePhoto()
                 let oriented = try MediaCaptureProcessor.decodeOrientedImage(rawData: data)
-                pendingPhoto = PendingPhotoCapture(orientedImage: oriented, qrEnabled: qrEnabled)
-                captureMessage = nil
+                captureMessage = "Saved. Attesting…"
+                Task { await finalizeAndAttestPhoto(orientedImage: oriented) }
             } catch {
                 captureMessage = "Capture failed: \(error.localizedDescription)"
             }
@@ -258,26 +228,27 @@ struct SurCamView: View {
         }
     }
 
-    /// Runs the full-res filter render off the main actor (real GPU/CPU
-    /// work — must never block the camera UI), then hops back for the
-    /// Photos save + chain submission. Called fire-and-forget from the
-    /// PhotoReviewView confirm handler, which has already dismissed back to
-    /// a live camera by the time this finishes.
-    private func finalizeAndAttestPhoto(orientedImage: CIImage, filter: SurCamFilter, qrEnabled: Bool, citation: String) async {
+    /// No filter is applied here — a fresh capture is always "Normal"/`.none`;
+    /// a filter only ever comes from a deliberate later re-edit
+    /// (EditCapturedPhotoView), which records it as a lineage edge instead of
+    /// silently baking it into the original. Runs off the main actor (real
+    /// GPU/CPU work — hashing, PNG-encoding a full-res image) then hops back
+    /// for the Photos save + chain submission, fire-and-forget from the
+    /// shutter handler, which has already returned to a live camera by the
+    /// time this finishes.
+    private func finalizeAndAttestPhoto(orientedImage: CIImage) async {
+        let includeLogoWatermark = AppSettings.shared.surCamLogoWatermarkEnabled
         do {
             let processed = try await Task.detached(priority: .userInitiated) {
-                try MediaCaptureProcessor.finalizePhoto(orientedImage: orientedImage, filter: filter)
+                try MediaCaptureProcessor.finalizePhoto(orientedImage: orientedImage, filter: .none)
             }.value
-            var finalImage = processed.finalImageForSaving
-            if qrEnabled {
-                let link = ProofLink.build(contentHash: processed.contentHash)
-                finalImage = await Task.detached(priority: .userInitiated) {
-                    QRStickerComposer.composite(baseImage: processed.finalImageForSaving, link: link)
-                }.value
-            }
-            await CaptureAttestationCoordinator.attestPhoto(
-                processed, finalImage: finalImage, qrApplied: qrEnabled, citation: citation
-            )
+            let finalImage = await Task.detached(priority: .userInitiated) {
+                PhotoWatermarkPipeline.apply(
+                    to: processed.finalImageForSaving, contentHash: processed.contentHash,
+                    includeLogoWatermark: includeLogoWatermark
+                )
+            }.value
+            await CaptureAttestationCoordinator.attestPhoto(processed, finalImage: finalImage, qrApplied: true)
             lastThumbnail = processed.finalImageForSaving
             if captureMessage == "Saved. Attesting…" { captureMessage = nil }
         } catch {
