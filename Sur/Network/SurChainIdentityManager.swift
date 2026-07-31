@@ -204,7 +204,6 @@ final class SurChainIdentityManager: ObservableObject {
             payload.append(Data(config.network.chainID.utf8))
             let identitySig = try SecureEnclaveManager.shared.signWithDeviceKey(payload)
 
-            let account = try await fetchAccountOrThrowFunding(creator)
             // Sign with the chain's real chain-id (falls back to the configured one).
             let chainID = (try? await client.getChainID()) ?? config.network.chainID
 
@@ -216,25 +215,18 @@ final class SurChainIdentityManager: ObservableObject {
                 identitySig: identitySig,
                 payload: payload
             )
-            let txBytes = try CosmosProtoTx.buildSignedTxBytes(
-                msgTypeURL: "/surchain.identity.v1.MsgRegisterUsername",
-                msgBody: msgBody,
-                chainID: chainID,
-                accountNumber: account.accountNumber,
-                sequence: account.sequence,
-                privateKey: walletKey,
-                feeDenom: config.network.feeDenom,
-                feeAmount: "10000",
-                gasLimit: 500_000
-            )
-            let result = try await client.broadcastTx(txBytes)
-            // SYNC broadcast: code 0 here only means CheckTx passed.
-            guard result.code == 0 else {
-                throw CosmosError.chainError(result.code, result.rawLog ?? "registration failed")
-            }
-            // Confirm it actually landed in a block and check the DeliverTx result.
-            if let confirmed = await recordAndConfirmTx(result.txHash), confirmed.code != 0 {
-                throw CosmosError.chainError(confirmed.code, confirmed.rawLog ?? "registration failed in block")
+            _ = try await broadcastWithSequenceRetry(creator: creator) { accountNumber, sequence in
+                try CosmosProtoTx.buildSignedTxBytes(
+                    msgTypeURL: "/surchain.identity.v1.MsgRegisterUsername",
+                    msgBody: msgBody,
+                    chainID: chainID,
+                    accountNumber: accountNumber,
+                    sequence: sequence,
+                    privateKey: walletKey,
+                    feeDenom: config.network.feeDenom,
+                    feeAmount: "10000",
+                    gasLimit: 500_000
+                )
             }
 
             defaults.set(deviceID, forKey: Self.usernameKey)
@@ -262,7 +254,6 @@ final class SurChainIdentityManager: ObservableObject {
         let acct = try surAccount()
         let creator = acct.address
         let walletKey = acct.privateKey
-        let account = try await fetchAccountOrThrowFunding(creator)
         let chainID = (try? await client.getChainID()) ?? config.network.chainID
 
         let msgBody = CosmosProtoTx.encodeMsgSubmitAttestation(
@@ -273,38 +264,28 @@ final class SurChainIdentityManager: ObservableObject {
             commitmentRoot: commitmentRoot,
             proofBytes: proofBytes
         )
-        // Groth16 verification on-chain is gas-heavy, so allow a generous gas limit.
-        let txBytes = try CosmosProtoTx.buildSignedTxBytes(
-            msgTypeURL: "/surchain.attestation.v1.MsgSubmitAttestation",
-            msgBody: msgBody,
-            chainID: chainID,
-            accountNumber: account.accountNumber,
-            sequence: account.sequence,
-            privateKey: walletKey,
-            feeDenom: config.network.feeDenom,
-            feeAmount: "20000",
-            gasLimit: 2_000_000
-        )
-        chainLog.notice("broadcasting attestation: signer=\(creator, privacy: .public) seq=\(account.sequence) chainID=\(chainID, privacy: .public)")
-        let result = try await client.broadcastTx(txBytes)
-        guard result.code == 0 else {
-            chainLog.error("attestation rejected in CheckTx: code=\(result.code) log=\(result.rawLog ?? "", privacy: .public)")
-            throw CosmosError.chainError(result.code, result.rawLog ?? "attestation failed")
+        chainLog.notice("broadcasting attestation: signer=\(creator, privacy: .public) chainID=\(chainID, privacy: .public)")
+        do {
+            // Groth16 verification on-chain is gas-heavy, so allow a generous gas limit.
+            let confirmed = try await broadcastWithSequenceRetry(creator: creator) { accountNumber, sequence in
+                try CosmosProtoTx.buildSignedTxBytes(
+                    msgTypeURL: "/surchain.attestation.v1.MsgSubmitAttestation",
+                    msgBody: msgBody,
+                    chainID: chainID,
+                    accountNumber: accountNumber,
+                    sequence: sequence,
+                    privateKey: walletKey,
+                    feeDenom: config.network.feeDenom,
+                    feeAmount: "20000",
+                    gasLimit: 2_000_000
+                )
+            }
+            chainLog.notice("attestation ON-CHAIN: tx=\(confirmed.txHash, privacy: .public) height=\(confirmed.height ?? -1)")
+            return confirmed
+        } catch {
+            chainLog.error("attestation failed: \(String(describing: error), privacy: .public)")
+            throw error
         }
-        let confirmed = await recordAndConfirmTx(result.txHash)
-        if let confirmed, confirmed.code != 0 {
-            chainLog.error("attestation failed in block: code=\(confirmed.code) log=\(confirmed.rawLog ?? "", privacy: .public)")
-            throw CosmosError.chainError(confirmed.code, confirmed.rawLog ?? "attestation failed in block")
-        }
-        chainLog.notice("attestation ON-CHAIN: tx=\(result.txHash, privacy: .public) height=\(confirmed?.height ?? -1)")
-        // Return the confirmed result (carries the block height) when available.
-        return CosmosTransactionResult(
-            txHash: result.txHash,
-            height: confirmed?.height ?? result.height,
-            code: 0,
-            rawLog: result.rawLog,
-            gasUsed: confirmed?.gasUsed ?? result.gasUsed
-        )
     }
 
     /// Submit a device-signed DECLARATION (not a human-typing proof). Used for
@@ -349,7 +330,6 @@ final class SurChainIdentityManager: ObservableObject {
 
         let acct = try surAccount()
         let creator = acct.address
-        let account = try await fetchAccountOrThrowFunding(creator)
         let chainID = (try? await client.getChainID()) ?? config.network.chainID
 
         let msgBody = CosmosProtoTx.encodeMsgSubmitAttestation(
@@ -364,31 +344,24 @@ final class SurChainIdentityManager: ObservableObject {
             devicePubkey: devicePub,
             deviceSignature: signature
         )
-        // No on-chain Groth16 verification for declarations → modest gas.
-        let txBytes = try CosmosProtoTx.buildSignedTxBytes(
-            msgTypeURL: "/surchain.attestation.v1.MsgSubmitAttestation",
-            msgBody: msgBody,
-            chainID: chainID,
-            accountNumber: account.accountNumber,
-            sequence: account.sequence,
-            privateKey: acct.privateKey,
-            feeDenom: config.network.feeDenom,
-            feeAmount: "10000",
-            gasLimit: 300_000
-        )
-        let result = try await client.broadcastTx(txBytes)
-        guard result.code == 0 else {
-            throw mapSubmitError(CosmosError.chainError(result.code, result.rawLog ?? "declaration failed"))
+        do {
+            // No on-chain Groth16 verification for declarations → modest gas.
+            return try await broadcastWithSequenceRetry(creator: creator) { accountNumber, sequence in
+                try CosmosProtoTx.buildSignedTxBytes(
+                    msgTypeURL: "/surchain.attestation.v1.MsgSubmitAttestation",
+                    msgBody: msgBody,
+                    chainID: chainID,
+                    accountNumber: accountNumber,
+                    sequence: sequence,
+                    privateKey: acct.privateKey,
+                    feeDenom: config.network.feeDenom,
+                    feeAmount: "10000",
+                    gasLimit: 300_000
+                )
+            }
+        } catch {
+            throw mapSubmitError(error)
         }
-        let confirmed = await recordAndConfirmTx(result.txHash)
-        if let confirmed, confirmed.code != 0 {
-            throw CosmosError.chainError(confirmed.code, confirmed.rawLog ?? "declaration failed in block")
-        }
-        return CosmosTransactionResult(
-            txHash: result.txHash,
-            height: confirmed?.height ?? result.height,
-            code: 0, rawLog: result.rawLog, gasUsed: confirmed?.gasUsed ?? result.gasUsed
-        )
     }
 
     // MARK: - Token transfer
@@ -399,32 +372,24 @@ final class SurChainIdentityManager: ObservableObject {
     /// chain-id resolution, signing, and confirmation-polling.
     func broadcastSignedMessage(msgTypeURL: String, msgBody: Data, feeAmount: String, gasLimit: UInt64) async throws -> CosmosTransactionResult {
         let acct = try surAccount()
-        let account = try await fetchAccountOrThrowFunding(acct.address)
         let chainID = (try? await client.getChainID()) ?? config.network.chainID
-        let txBytes = try CosmosProtoTx.buildSignedTxBytes(
-            msgTypeURL: msgTypeURL,
-            msgBody: msgBody,
-            chainID: chainID,
-            accountNumber: account.accountNumber,
-            sequence: account.sequence,
-            privateKey: acct.privateKey,
-            feeDenom: config.network.feeDenom,
-            feeAmount: feeAmount,
-            gasLimit: gasLimit
-        )
-        let result = try await client.broadcastTx(txBytes)
-        guard result.code == 0 else {
-            throw mapSubmitError(CosmosError.chainError(result.code, result.rawLog ?? "broadcast failed"))
+        do {
+            return try await broadcastWithSequenceRetry(creator: acct.address) { accountNumber, sequence in
+                try CosmosProtoTx.buildSignedTxBytes(
+                    msgTypeURL: msgTypeURL,
+                    msgBody: msgBody,
+                    chainID: chainID,
+                    accountNumber: accountNumber,
+                    sequence: sequence,
+                    privateKey: acct.privateKey,
+                    feeDenom: config.network.feeDenom,
+                    feeAmount: feeAmount,
+                    gasLimit: gasLimit
+                )
+            }
+        } catch {
+            throw mapSubmitError(error)
         }
-        let confirmed = await recordAndConfirmTx(result.txHash)
-        if let confirmed, confirmed.code != 0 {
-            throw CosmosError.chainError(confirmed.code, confirmed.rawLog ?? "failed in block")
-        }
-        return CosmosTransactionResult(
-            txHash: result.txHash,
-            height: confirmed?.height ?? result.height,
-            code: 0, rawLog: result.rawLog, gasUsed: confirmed?.gasUsed ?? result.gasUsed
-        )
     }
 
     /// Send `displayAmount` SUR (e.g. "1.5") to `toAddress` (a sur1… account).
@@ -458,35 +423,26 @@ final class SurChainIdentityManager: ObservableObject {
             }
         }
 
-        let account = try await fetchAccountOrThrowFunding(from)
         let chainID = (try? await client.getChainID()) ?? config.network.chainID
-
         let msgBody = CosmosProtoTx.encodeMsgSend(from: from, to: recipient, denom: denom, amount: micro)
-        let txBytes = try CosmosProtoTx.buildSignedTxBytes(
-            msgTypeURL: "/cosmos.bank.v1beta1.MsgSend",
-            msgBody: msgBody,
-            chainID: chainID,
-            accountNumber: account.accountNumber,
-            sequence: account.sequence,
-            privateKey: acct.privateKey,
-            feeDenom: denom,
-            feeAmount: String(feeAmount),
-            gasLimit: 200_000
-        )
         chainLog.notice("sending \(micro, privacy: .public)\(denom, privacy: .public) → \(recipient, privacy: .public)")
-        let result = try await client.broadcastTx(txBytes)
-        guard result.code == 0 else {
-            throw mapSubmitError(CosmosError.chainError(result.code, result.rawLog ?? "send failed"))
+        do {
+            return try await broadcastWithSequenceRetry(creator: from) { accountNumber, sequence in
+                try CosmosProtoTx.buildSignedTxBytes(
+                    msgTypeURL: "/cosmos.bank.v1beta1.MsgSend",
+                    msgBody: msgBody,
+                    chainID: chainID,
+                    accountNumber: accountNumber,
+                    sequence: sequence,
+                    privateKey: acct.privateKey,
+                    feeDenom: denom,
+                    feeAmount: String(feeAmount),
+                    gasLimit: 200_000
+                )
+            }
+        } catch {
+            throw mapSubmitError(error)
         }
-        let confirmed = await recordAndConfirmTx(result.txHash)
-        if let confirmed, confirmed.code != 0 {
-            throw CosmosError.chainError(confirmed.code, confirmed.rawLog ?? "send failed in block")
-        }
-        return CosmosTransactionResult(
-            txHash: result.txHash,
-            height: confirmed?.height ?? result.height,
-            code: 0, rawLog: result.rawLog, gasUsed: confirmed?.gasUsed ?? result.gasUsed
-        )
     }
 
     /// Convert a display amount (e.g. "1.5") to the integer micro-denom string
@@ -629,6 +585,100 @@ final class SurChainIdentityManager: ObservableObject {
             return CosmosError.chainError(-1, "This device isn't registered on \(config.network.environment.displayName). Re-register it (Account → Sur Chain → Reset registration), then retry.")
         }
         return error
+    }
+
+    // MARK: - Sequence management
+
+    /// Client-side cache of (accountNumber, nextSequence) for the wallet account.
+    /// Without this, every submission independently re-fetched the account's
+    /// sequence from chain — fine in isolation, but a real bug for back-to-back
+    /// submissions (e.g. EditCapturedPhotoView attesting the edited photo, then
+    /// immediately recording the lineage edge): the second fetch would return the
+    /// SAME sequence as the first, since the first tx hadn't landed in a block
+    /// yet, and the chain rejects the second broadcast with "account sequence
+    /// mismatch". Reserving from this cache instead — synchronously incrementing
+    /// it with no `await` in between — hands out a unique, correctly-incrementing
+    /// sequence to every caller regardless of how quickly they're issued.
+    private var cachedSequenceState: (address: String, accountNumber: UInt64, nextSequence: UInt64)?
+    /// Coalesces concurrent cold-cache reservations onto a single account fetch,
+    /// so two near-simultaneous first-time submissions can't both seed the cache
+    /// from the same fetched sequence.
+    private var pendingAccountFetchTask: Task<CosmosAccount, Error>?
+
+    private func reserveSequence(for address: String) async throws -> (accountNumber: UInt64, sequence: UInt64) {
+        if let cached = cachedSequenceState, cached.address == address {
+            cachedSequenceState = (address, cached.accountNumber, cached.nextSequence + 1)
+            return (cached.accountNumber, cached.nextSequence)
+        }
+        let account: CosmosAccount
+        if let pending = pendingAccountFetchTask {
+            account = try await pending.value
+        } else {
+            let task = Task { try await self.fetchAccountOrThrowFunding(address) }
+            pendingAccountFetchTask = task
+            account = try await task.value
+            pendingAccountFetchTask = nil
+        }
+        // A concurrent caller may have already seeded the cache while we were
+        // awaiting the fetch above — recheck rather than blindly overwriting.
+        if let cached = cachedSequenceState, cached.address == address {
+            cachedSequenceState = (address, cached.accountNumber, cached.nextSequence + 1)
+            return (cached.accountNumber, cached.nextSequence)
+        }
+        cachedSequenceState = (address, account.accountNumber, account.sequence + 1)
+        return (account.accountNumber, account.sequence)
+    }
+
+    /// Drops the cached sequence so the next reservation re-fetches from chain.
+    /// Called when a broadcast is rejected as a sequence mismatch anyway (e.g.
+    /// another session used the same key, or a prior tx never made it to
+    /// mempool) — without this, a wrong local cache would wedge every future
+    /// submission instead of self-correcting.
+    private func resetSequenceCache() {
+        cachedSequenceState = nil
+    }
+
+    private func isSequenceMismatch(code: Int, log: String?) -> Bool {
+        code == 32 || (log?.localizedCaseInsensitiveContains("account sequence mismatch") ?? false)
+    }
+
+    /// Signs and broadcasts via `build` (given a reserved accountNumber/sequence),
+    /// confirms inclusion, and retries once — with a freshly re-fetched sequence —
+    /// if the chain rejects it as a sequence mismatch. Centralizes the
+    /// reserve→sign→broadcast→confirm shape every write path below needs.
+    private func broadcastWithSequenceRetry(
+        creator: String,
+        build: (_ accountNumber: UInt64, _ sequence: UInt64) throws -> Data
+    ) async throws -> CosmosTransactionResult {
+        var lastError: Error = CosmosError.chainError(-1, "broadcast failed")
+        for attempt in 0..<2 {
+            let (accountNumber, sequence) = try await reserveSequence(for: creator)
+            let txBytes = try build(accountNumber, sequence)
+            let result = try await client.broadcastTx(txBytes)
+            if result.code != 0 {
+                if attempt == 0, isSequenceMismatch(code: result.code, log: result.rawLog) {
+                    resetSequenceCache()
+                    lastError = CosmosError.chainError(result.code, result.rawLog ?? "broadcast failed")
+                    continue
+                }
+                throw CosmosError.chainError(result.code, result.rawLog ?? "broadcast failed")
+            }
+            let confirmed = await recordAndConfirmTx(result.txHash)
+            if let confirmed, confirmed.code != 0 {
+                if attempt == 0, isSequenceMismatch(code: confirmed.code, log: confirmed.rawLog) {
+                    resetSequenceCache()
+                    lastError = CosmosError.chainError(confirmed.code, confirmed.rawLog ?? "failed in block")
+                    continue
+                }
+                throw CosmosError.chainError(confirmed.code, confirmed.rawLog ?? "failed in block")
+            }
+            return CosmosTransactionResult(
+                txHash: result.txHash,
+                height: confirmed?.height ?? result.height,
+                code: 0, rawLog: result.rawLog, gasUsed: confirmed?.gasUsed ?? result.gasUsed
+            )
+        }
+        throw lastError
     }
 
     // MARK: - Helpers

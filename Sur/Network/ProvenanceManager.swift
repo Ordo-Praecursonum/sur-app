@@ -14,13 +14,30 @@
 //  MsgRegisterPrincipal, for third-party pipeline operators) is a separate,
 //  later concern — not needed for a user editing their own capture.
 //
+//  Two things the chain enforces that are easy to miss:
+//   - SubmitProvenanceNode's signature is verified with `ecdsa.VerifyASN1`
+//     against a P-256 pubkey — that's the Secure Enclave device key
+//     (SecureEnclaveManager), NOT the secp256k1 key DeviceIDManager uses for
+//     x/attestation declarations. Signing with the wrong key/curve here
+//     fails verification silently different from a helpful error.
+//   - `principal_id` must already exist via a prior MsgRegisterPrincipal —
+//     the keeper looks it up and rejects unknown principals. This class
+//     self-registers the device's own id lazily, once, before its first
+//     provenance node submission.
+//
 
 import Foundation
 
 @MainActor
 final class ProvenanceManager {
     static let shared = ProvenanceManager()
-    private init() {}
+    private init() {
+        self.defaults = UserDefaults(suiteName: Self.appGroup) ?? .standard
+    }
+
+    private static let appGroup = "group.com.ordo.sure.Sur"
+    private static let principalRegisteredKey = "sur.provenance.principalRegistered.v1"
+    private let defaults: UserDefaults
 
     /// Records that `hashOut` was derived from `hashIn` via `transformationType`
     /// (e.g. "filter:noir"). Throws if the device has no identity yet or if the
@@ -35,13 +52,15 @@ final class ProvenanceManager {
             throw CosmosError.chainError(-1, "wallet account unavailable")
         }
 
-        // Sign: content_hash_in ‖ content_hash_out ‖ transformation_type.
+        try await ensurePrincipalRegistered(deviceID: deviceID, creator: creator)
+
+        // Sign: content_hash_in ‖ content_hash_out ‖ transformation_type — with
+        // the P-256 Secure Enclave device key, matching the chain's
+        // ecdsa.VerifyASN1(principal.Pubkey, ...) check.
         var payload = hashIn
         payload.append(hashOut)
         payload.append(Data(transformationType.utf8))
-        guard let sig = DeviceIDManager.shared.signDeclaration(payload) else {
-            throw CosmosError.chainError(-1, "failed to sign provenance node")
-        }
+        let sig = try SecureEnclaveManager.shared.signWithDeviceKey(payload)
 
         let msgBody = CosmosProtoTx.encodeMsgSubmitProvenanceNode(
             creator: creator,
@@ -57,5 +76,34 @@ final class ProvenanceManager {
             feeAmount: "10000",
             gasLimit: 300_000
         )
+    }
+
+    /// Self-registers the device's own id as a provenance principal, once.
+    /// Skips the broadcast entirely once the local flag is set; if the flag
+    /// was lost (reinstall, restore) and the chain says the principal already
+    /// exists, that's treated as success too rather than surfaced as an error.
+    private func ensurePrincipalRegistered(deviceID: String, creator: String) async throws {
+        guard !defaults.bool(forKey: Self.principalRegisteredKey) else { return }
+
+        let pubkey = try SecureEnclaveManager.shared.getDeviceSigningPublicKeyBytes()
+        let msgBody = CosmosProtoTx.encodeMsgRegisterPrincipal(
+            creator: creator,
+            principalID: deviceID,
+            name: "",
+            pubkey: pubkey,
+            principalType: "device",
+            domain: ""
+        )
+        do {
+            _ = try await SurChainIdentityManager.shared.broadcastSignedMessage(
+                msgTypeURL: "/surchain.provenance.v1.MsgRegisterPrincipal",
+                msgBody: msgBody,
+                feeAmount: "10000",
+                gasLimit: 250_000
+            )
+            defaults.set(true, forKey: Self.principalRegisteredKey)
+        } catch let CosmosError.chainError(_, log) where log.localizedCaseInsensitiveContains("already registered") {
+            defaults.set(true, forKey: Self.principalRegisteredKey)
+        }
     }
 }

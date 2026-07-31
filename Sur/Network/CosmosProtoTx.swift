@@ -134,6 +134,23 @@ enum CosmosProtoTx {
         return w.data
     }
 
+    /// surchain.provenance.v1.MsgRegisterPrincipal { creator=1, principal_id=2,
+    /// name=3, pubkey=4 [65-byte uncompressed P-256 point], principal_type=5,
+    /// domain=6 }. Must succeed once for a principal_id before it can be used
+    /// in MsgSubmitProvenanceNode — the chain looks it up by id and rejects
+    /// unknown principals.
+    static func encodeMsgRegisterPrincipal(creator: String, principalID: String, name: String,
+                                           pubkey: Data, principalType: String, domain: String) -> Data {
+        var w = Writer()
+        w.putString(1, creator)
+        w.putString(2, principalID)
+        w.putString(3, name)
+        w.putBytes(4, pubkey)
+        w.putString(5, principalType)
+        w.putString(6, domain)
+        return w.data
+    }
+
     /// cosmos.bank.v1beta1.MsgSend { from_address=1, to_address=2, amount=3 [Coin] }.
     /// `amount` is the integer micro-denom amount as a string (e.g. "1500000").
     static func encodeMsgSend(from: String, to: String, denom: String, amount: String) -> Data {
