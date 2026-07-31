@@ -41,5 +41,7 @@
 	<array>
 		<string>com.ordo.sur.attest.flush</string>
 	</array>
+	<key>NSSupportsLiveActivities</key>
+	<true/>
 </dict>
 </plist>

@@ -75,6 +75,7 @@ final class CallAttestationStore: ObservableObject {
         if items[idx].status == .submitted || items[idx].status == .submitting { return }
         let item = items[idx]
         update(id: id) { $0.status = .submitting; $0.error = nil }
+        AttestationActivityManager.shared.start(id: id.uuidString, kindLabel: "Call to \(item.calleeDisplayName)")
         do {
             let isoTimestamp = ISO8601DateFormatter().string(from: item.createdAt)
             let canonical = "call:\(item.calleeNumberE164):\(isoTimestamp):\(item.method.rawValue)"
@@ -84,8 +85,10 @@ final class CallAttestationStore: ObservableObject {
                 citation: "Call initiated via \(item.method.displayName)"
             )
             update(id: id) { $0.status = .submitted; $0.txHash = result.txHash; $0.txHeight = result.height; $0.error = nil }
+            await AttestationActivityManager.shared.end(id: id.uuidString, status: .submitted, detail: "Confirmed on-chain")
         } catch {
             update(id: id) { $0.status = .failed; $0.error = error.localizedDescription }
+            await AttestationActivityManager.shared.end(id: id.uuidString, status: .failed, detail: error.localizedDescription)
         }
     }
 

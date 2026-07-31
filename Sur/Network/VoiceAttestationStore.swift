@@ -53,14 +53,17 @@ final class VoiceAttestationStore: ObservableObject {
         if items[idx].status == .submitted || items[idx].status == .submitting { return }
         let item = items[idx]
         update(id: id) { $0.status = .submitting; $0.error = nil }
+        AttestationActivityManager.shared.start(id: id.uuidString, kindLabel: "Voice memo (\(Int(item.duration))s)")
         do {
             let result = try await identity.submitDeclaration(
                 contentHash: item.contentHash, origin: AttestationOrigin.deviceAuthored.rawValue,
                 citation: "Voice memo (\(Int(item.duration))s)"
             )
             update(id: id) { $0.status = .submitted; $0.txHash = result.txHash; $0.txHeight = result.height; $0.error = nil }
+            await AttestationActivityManager.shared.end(id: id.uuidString, status: .submitted, detail: "Confirmed on-chain")
         } catch {
             update(id: id) { $0.status = .failed; $0.error = error.localizedDescription }
+            await AttestationActivityManager.shared.end(id: id.uuidString, status: .failed, detail: error.localizedDescription)
         }
     }
 

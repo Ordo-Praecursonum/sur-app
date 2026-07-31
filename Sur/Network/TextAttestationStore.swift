@@ -180,9 +180,11 @@ final class TextAttestationStore: ObservableObject {
         if items[idx].status == .submitted || items[idx].status == .submitting { return }
         let item = items[idx]
         update(id: id) { $0.status = .submitting; $0.error = nil }
+        let isHumanKeyboard = item.origin == AttestationOrigin.humanKeyboard.rawValue
+        AttestationActivityManager.shared.start(id: id.uuidString, kindLabel: isHumanKeyboard ? "Keyboard attestation" : "Text attestation")
         do {
             let result: CosmosTransactionResult
-            if item.origin == AttestationOrigin.humanKeyboard.rawValue {
+            if isHumanKeyboard {
                 // Sur Keyboard content → real human-typing ZK proof.
                 result = try await identity.proveAndSubmitText(
                     text: item.text, ikiValues: item.ikiValues,
@@ -195,8 +197,10 @@ final class TextAttestationStore: ObservableObject {
                 )
             }
             update(id: id) { $0.status = .submitted; $0.txHash = result.txHash; $0.txHeight = result.height; $0.error = nil }
+            await AttestationActivityManager.shared.end(id: id.uuidString, status: .submitted, detail: "Confirmed on-chain")
         } catch {
             update(id: id) { $0.status = .failed; $0.error = error.localizedDescription }
+            await AttestationActivityManager.shared.end(id: id.uuidString, status: .failed, detail: error.localizedDescription)
         }
     }
 
