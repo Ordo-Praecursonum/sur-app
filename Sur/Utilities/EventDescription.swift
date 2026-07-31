@@ -23,6 +23,6 @@ enum EventDescription {
     static let photo = "A photo"
     static let video = "A video"
     static let audio = "An audio"
-    static let file = "A file was attested"
-    static let call = "A call was attested"
+    static let file = "A file"
+    static let call = "A call"
 }
