@@ -213,7 +213,12 @@ final class SurChainIdentityManager: ObservableObject {
                 controlPubkey: controlPubkey,
                 firstCommitment: commitment,
                 identitySig: identitySig,
-                payload: payload
+                payload: payload,
+                // This flow registers a device identity, not a human alias/AI
+                // agent/bot — those would be separate future flows using a
+                // different registrantKind, so this call is explicit rather
+                // than relying on the default.
+                registrantKind: "device"
             )
             _ = try await broadcastWithSequenceRetry(creator: creator) { accountNumber, sequence in
                 try CosmosProtoTx.buildSignedTxBytes(

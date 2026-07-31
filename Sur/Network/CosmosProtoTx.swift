@@ -77,7 +77,8 @@ enum CosmosProtoTx {
     // MARK: - Sur message encoders (produce the Any.value bytes)
 
     static func encodeMsgRegisterUsername(creator: String, username: String, controlPubkey: Data,
-                                          firstCommitment: Data, identitySig: Data, payload: Data) -> Data {
+                                          firstCommitment: Data, identitySig: Data, payload: Data,
+                                          registrantKind: String = "device") -> Data {
         var w = Writer()
         w.putString(1, creator)
         w.putString(2, username)
@@ -85,6 +86,7 @@ enum CosmosProtoTx {
         w.putBytes(4, firstCommitment)
         w.putBytes(5, identitySig)
         w.putBytes(6, payload)
+        w.putString(7, registrantKind)
         return w.data
     }
 
