@@ -2,9 +2,10 @@
 //  CallMethodPicker.swift
 //  Sur
 //
-//  Action sheet for choosing how to place a call — filtered by
-//  CallInitiationCoordinator.canOpen so a method with no handler (e.g. no
-//  FaceTime on this Apple ID) never shows a dead button.
+//  Action sheet for choosing how to place a call. All four methods are
+//  always shown — see CallInitiationCoordinator's header comment for why
+//  this isn't filtered by canOpenURL anymore (it was unreliably hiding
+//  Phone/FaceTime on real devices).
 //
 
 import SwiftUI
@@ -15,10 +16,6 @@ struct CallMethodPicker: View {
     var onSelect: (CallMethod) -> Void
 
     private let allMethods: [CallMethod] = [.phone, .facetimeVideo, .facetimeAudio, .whatsapp]
-
-    private var availableMethods: [CallMethod] {
-        allMethods.filter { CallInitiationCoordinator.canOpen(method: $0, rawNumber: rawNumber) }
-    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -35,14 +32,7 @@ struct CallMethodPicker: View {
                 .foregroundColor(.secondary)
                 .padding(.bottom, 12)
 
-            if availableMethods.isEmpty {
-                Text("No call method is available for this number.")
-                    .font(.footnote)
-                    .foregroundColor(.secondary)
-                    .padding()
-            }
-
-            ForEach(availableMethods, id: \.self) { method in
+            ForEach(allMethods, id: \.self) { method in
                 Button {
                     onSelect(method)
                 } label: {
@@ -66,7 +56,7 @@ struct CallMethodPicker: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                if method != availableMethods.last {
+                if method != allMethods.last {
                     Divider().padding(.leading, 60)
                 }
             }

@@ -10,36 +10,41 @@
 
 import SwiftUI
 
+private enum OnboardingIcon {
+    case system(String)
+    case appLogo
+}
+
 private struct OnboardingPage: Identifiable {
     let id = UUID()
-    let icon: String
+    let icon: OnboardingIcon
     let title: String
     let body: String
 }
 
 private let onboardingPages: [OnboardingPage] = [
     OnboardingPage(
-        icon: "shield.checkerboard",
+        icon: .appLogo,
         title: "Welcome to Sur",
         body: "Sur proves what's real — content, calls, and messages — with a record on chain that anyone can check."
     ),
     OnboardingPage(
-        icon: "camera.fill",
+        icon: .system("camera.fill"),
         title: "Sur Cam",
         body: "Take a photo or video and Sur automatically attests it on chain. Turn on QR to stamp the proof link right onto the photo."
     ),
     OnboardingPage(
-        icon: "checkmark.seal.fill",
+        icon: .system("checkmark.seal.fill"),
         title: "Attest",
         body: "Every proof lives here — text, keyboard sessions, camera captures, files, voice memos, and calls, all in one feed."
     ),
     OnboardingPage(
-        icon: "phone.fill",
+        icon: .system("phone.fill"),
         title: "Calls",
         body: "Call contacts through Phone, FaceTime, or WhatsApp. Sur records an on-chain proof that the call was initiated."
     ),
     OnboardingPage(
-        icon: "bitcoinsign.circle.fill",
+        icon: .appLogo,
         title: "Sur Chain",
         body: "Your identity, balance, and network — everything about your presence on the Sur Chain lives here."
     ),
@@ -86,9 +91,18 @@ struct GetStartedView: View {
     private func pageView(_ page: OnboardingPage) -> some View {
         VStack(spacing: 24) {
             Spacer()
-            Image(systemName: page.icon)
-                .font(.system(size: 56))
-                .foregroundColor(Theme.brandOrange)
+            switch page.icon {
+            case .system(let name):
+                Image(systemName: name)
+                    .font(.system(size: 56))
+                    .foregroundColor(Theme.brandOrange)
+            case .appLogo:
+                Image("AppLogo")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 72, height: 72)
+                    .clipShape(RoundedRectangle(cornerRadius: 16))
+            }
             Text(page.title)
                 .font(.title)
                 .fontWeight(.bold)

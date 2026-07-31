@@ -9,6 +9,16 @@
 //  must be surfaced honestly in the UI (see CallMethodPicker), not implied
 //  as a direct call.
 //
+//  All four methods are always offered (no canOpenURL pre-filtering): that
+//  gating was hiding Phone/FaceTime entirely on real devices — `tel://`
+//  (double-slash "authority" form) is not the canonical scheme Apple
+//  documents (`tel:1-408-555-5555`, single colon) and `canOpenURL` doesn't
+//  reliably parse it as a valid tel handler on-device, even though it
+//  happens to construct a non-nil URL. Fixed to the documented `tel:` form
+//  and dropped the gate entirely — exactly like WhatsApp already was, we
+//  let iOS itself no-op or show its own error if a method genuinely isn't
+//  available, rather than risk hiding options a user expects to see.
+//
 
 import UIKit
 
@@ -22,19 +32,13 @@ enum CallInitiationCoordinator {
         }
     }
 
-    static func canOpen(method: CallMethod, rawNumber: String) -> Bool {
-        // wa.me is a universal web link — it degrades gracefully to Safari
-        // even without WhatsApp installed, so it's always offered.
-        if method == .whatsapp { return true }
-        guard let url = handoffURL(rawNumber: rawNumber, method: method) else { return false }
-        return UIApplication.shared.canOpenURL(url)
-    }
-
     private static func handoffURL(rawNumber: String, method: CallMethod) -> URL? {
         let digits = rawNumber.filter { $0.isNumber || $0 == "+" }
         switch method {
         case .phone:
-            return URL(string: "tel://\(digits)")
+            // Apple's documented tel: format is single-colon, no slashes —
+            // `tel://` is the authority form and isn't reliably recognized.
+            return URL(string: "tel:\(digits)")
         case .facetimeVideo:
             return URL(string: "facetime://\(digits)")
         case .facetimeAudio:

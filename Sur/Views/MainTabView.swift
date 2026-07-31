@@ -13,6 +13,7 @@
 //
 
 import SwiftUI
+import UIKit
 
 enum MainTab: Hashable {
     case surCam
@@ -21,6 +22,21 @@ enum MainTab: Hashable {
     case surChain
     case settings
 }
+
+/// SwiftUI's `.resizable().frame()` on a custom asset `Image` isn't reliably
+/// honored once bridged into `UITabBarItem.image` — the AppLogo asset only
+/// has its 1x slot filled (2x/3x are declared but unassigned in
+/// Contents.json), and the tab bar item rendered that source at native
+/// (huge) size instead of the requested frame, blowing out the whole tab
+/// bar's layout. Pre-rendering a fixed-size bitmap once, up front, sidesteps
+/// that asset-scale/SwiftUI-tabItem-bridging quirk entirely.
+private let surChainTabIcon: UIImage = {
+    let size = CGSize(width: 24, height: 24)
+    let renderer = UIGraphicsImageRenderer(size: size)
+    return renderer.image { _ in
+        UIImage(named: "AppLogo")?.draw(in: CGRect(origin: .zero, size: size))
+    }.withRenderingMode(.alwaysOriginal)
+}()
 
 struct MainTabView: View {
     @StateObject private var router = TabRouter.shared
@@ -43,7 +59,13 @@ struct MainTabView: View {
                 .tag(MainTab.calls)
 
             SurChainTabView()
-                .tabItem { Label("Sur Chain", systemImage: "bitcoinsign.circle.fill") }
+                .tabItem {
+                    Label {
+                        Text("Sur Chain")
+                    } icon: {
+                        Image(uiImage: surChainTabIcon)
+                    }
+                }
                 .tag(MainTab.surChain)
 
             SettingsTabView()

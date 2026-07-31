@@ -82,38 +82,53 @@ struct SurCamView: View {
     }
 
     private var topBar: some View {
-        HStack {
-            Button {
-                qrEnabled.toggle()
-            } label: {
-                Label("QR", systemImage: qrEnabled ? "qrcode.viewfinder" : "qrcode")
-                    .labelStyle(.iconOnly)
-                    .font(.title3)
-                    .foregroundColor(qrEnabled ? Theme.brandOrange : .white)
-                    .padding(10)
-                    .background(.black.opacity(0.35))
-                    .clipShape(Circle())
-            }
-            Spacer()
-            Button {
-                camera.isFlashOn.toggle()
-            } label: {
-                Image(systemName: camera.isFlashOn ? "bolt.fill" : "bolt.slash.fill")
-                    .font(.title3)
+        ZStack {
+            // Sur Cam brand mark — the "SnapChat home page" reference this
+            // screen is modeled on always shows its own logo up top.
+            HStack(spacing: 6) {
+                Image("AppLogo")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 22, height: 22)
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                Text("Sur Cam")
+                    .font(.subheadline.weight(.semibold))
                     .foregroundColor(.white)
-                    .padding(10)
-                    .background(.black.opacity(0.35))
-                    .clipShape(Circle())
             }
-            Button {
-                camera.toggleCamera()
-            } label: {
-                Image(systemName: "arrow.triangle.2.circlepath.camera")
-                    .font(.title3)
-                    .foregroundColor(.white)
-                    .padding(10)
-                    .background(.black.opacity(0.35))
-                    .clipShape(Circle())
+
+            HStack {
+                Button {
+                    qrEnabled.toggle()
+                } label: {
+                    Label("QR", systemImage: qrEnabled ? "qrcode.viewfinder" : "qrcode")
+                        .labelStyle(.iconOnly)
+                        .font(.title3)
+                        .foregroundColor(qrEnabled ? Theme.brandOrange : .white)
+                        .padding(10)
+                        .background(.black.opacity(0.35))
+                        .clipShape(Circle())
+                }
+                Spacer()
+                Button {
+                    camera.isFlashOn.toggle()
+                } label: {
+                    Image(systemName: camera.isFlashOn ? "bolt.fill" : "bolt.slash.fill")
+                        .font(.title3)
+                        .foregroundColor(.white)
+                        .padding(10)
+                        .background(.black.opacity(0.35))
+                        .clipShape(Circle())
+                }
+                Button {
+                    camera.toggleCamera()
+                } label: {
+                    Image(systemName: "arrow.triangle.2.circlepath.camera")
+                        .font(.title3)
+                        .foregroundColor(.white)
+                        .padding(10)
+                        .background(.black.opacity(0.35))
+                        .clipShape(Circle())
+                }
             }
         }
         .padding(.horizontal)
