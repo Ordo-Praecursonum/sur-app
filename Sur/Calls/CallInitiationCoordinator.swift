@@ -24,9 +24,11 @@ import UIKit
 
 @MainActor
 enum CallInitiationCoordinator {
-    static func initiateCall(displayName: String, rawNumber: String, method: CallMethod) {
+    static func initiateCall(displayName: String, rawNumber: String, method: CallMethod,
+                              citation: String = EventDescription.call) {
         let e164 = PhoneNumberFormatting.e164(from: rawNumber)
-        CallAttestationStore.shared.enqueue(calleeDisplayName: displayName, calleeNumberE164: e164, method: method)
+        CallAttestationStore.shared.enqueue(calleeDisplayName: displayName, calleeNumberE164: e164,
+                                             method: method, citation: citation)
         if let url = handoffURL(rawNumber: rawNumber, method: method) {
             UIApplication.shared.open(url)
         }

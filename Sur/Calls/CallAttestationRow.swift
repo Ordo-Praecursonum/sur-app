@@ -24,6 +24,9 @@ struct CallAttestationRow: View {
             Text(item.calleeNumberE164)
                 .font(.caption2)
                 .foregroundColor(.secondary)
+            if item.citation != EventDescription.call {
+                Text(item.citation).font(.caption2).foregroundColor(.secondary).lineLimit(1)
+            }
             HStack(spacing: 8) {
                 statusBadge
                 Spacer()

@@ -141,7 +141,8 @@ final class TextAttestationStore: ObservableObject {
                 ikiValues: interKeystrokeIntervals(session),
                 humanScore: Int((session.humanTypingScore ?? 60).rounded()),
                 keystrokeCount: session.signedKeystrokes.count,
-                status: .pending, txHash: nil, error: nil, sessionId: session.sessionId
+                status: .pending, txHash: nil, error: nil, sessionId: session.sessionId,
+                citation: EventDescription.placeholder(for: .humanKeyboard)
             )
             items.insert(item, at: 0)
             didEnqueue = true

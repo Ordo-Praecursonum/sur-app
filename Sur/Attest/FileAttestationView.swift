@@ -26,11 +26,12 @@ struct FileAttestationView: View {
         AttestationOrigin.allCases.filter { $0 != .humanKeyboard }
 
     private var canAttest: Bool {
-        guard contentHash != nil else { return false }
-        if origin.needsCitation {
-            return !citation.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        }
-        return true
+        contentHash != nil
+    }
+
+    private var resolvedCitation: String {
+        let trimmed = citation.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? EventDescription.file : trimmed
     }
 
     var body: some View {
@@ -68,21 +69,20 @@ struct FileAttestationView: View {
                             Text("Where did this file come from?")
                         }
 
-                        if origin.needsCitation {
-                            Section {
-                                TextField(origin == .externalSource ? "URL, book, author…" : "Source / note",
-                                          text: $citation)
-                                    .textInputAutocapitalization(.never)
-                            } header: {
-                                Text("Citation")
-                            }
+                        Section {
+                            TextField(EventDescription.file, text: $citation)
+                                .textInputAutocapitalization(.never)
+                        } header: {
+                            Text("Description")
+                        } footer: {
+                            Text("What this attestation records, shown on-chain. Leave blank to use \"\(EventDescription.file)\".")
                         }
 
                         Section {
                             Button("Sign & submit") {
                                 store.enqueue(
                                     fileName: name, fileSize: size, contentHash: hash,
-                                    origin: origin, citation: origin.needsCitation ? citation : nil
+                                    origin: origin, citation: resolvedCitation
                                 )
                                 dismiss()
                             }

@@ -13,9 +13,16 @@ import SwiftUI
 struct CallMethodPicker: View {
     let displayName: String
     let rawNumber: String
-    var onSelect: (CallMethod) -> Void
+    var onSelect: (CallMethod, String) -> Void
+
+    @State private var citation = ""
 
     private let allMethods: [CallMethod] = [.phone, .facetimeVideo, .facetimeAudio, .whatsapp]
+
+    private var resolvedCitation: String {
+        let trimmed = citation.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? EventDescription.call : trimmed
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -32,9 +39,15 @@ struct CallMethodPicker: View {
                 .foregroundColor(.secondary)
                 .padding(.bottom, 12)
 
+            TextField(EventDescription.call, text: $citation)
+                .textFieldStyle(.roundedBorder)
+                .textInputAutocapitalization(.never)
+                .padding(.horizontal)
+                .padding(.bottom, 8)
+
             ForEach(allMethods, id: \.self) { method in
                 Button {
-                    onSelect(method)
+                    onSelect(method, resolvedCitation)
                 } label: {
                     HStack(spacing: 14) {
                         Image(systemName: icon(for: method))

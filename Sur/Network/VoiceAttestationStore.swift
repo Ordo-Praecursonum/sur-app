@@ -16,10 +16,33 @@ struct VoiceAttestation: Codable, Identifiable, Equatable {
     let duration: TimeInterval
     let contentHash: Data
     let createdAt: Date
+    var citation: String
     var status: Status
     var txHash: String?
     var txHeight: Int64?
     var error: String?
+
+    init(id: UUID, duration: TimeInterval, contentHash: Data, createdAt: Date, citation: String,
+         status: Status, txHash: String?, txHeight: Int64?, error: String?) {
+        self.id = id; self.duration = duration; self.contentHash = contentHash; self.createdAt = createdAt
+        self.citation = citation; self.status = status; self.txHash = txHash; self.txHeight = txHeight; self.error = error
+    }
+
+    // Tolerant decoding so voice attestations persisted before `citation`
+    // existed still load, falling back to the same default they were
+    // submitted with.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(UUID.self, forKey: .id)
+        duration = try c.decode(TimeInterval.self, forKey: .duration)
+        contentHash = try c.decode(Data.self, forKey: .contentHash)
+        createdAt = try c.decode(Date.self, forKey: .createdAt)
+        citation = try c.decodeIfPresent(String.self, forKey: .citation) ?? EventDescription.audio
+        status = try c.decode(Status.self, forKey: .status)
+        txHash = try c.decodeIfPresent(String.self, forKey: .txHash)
+        txHeight = try c.decodeIfPresent(Int64.self, forKey: .txHeight)
+        error = try c.decodeIfPresent(String.self, forKey: .error)
+    }
 }
 
 @MainActor
@@ -38,9 +61,9 @@ final class VoiceAttestationStore: ObservableObject {
         load()
     }
 
-    func enqueue(duration: TimeInterval, contentHash: Data) {
+    func enqueue(duration: TimeInterval, contentHash: Data, citation: String = EventDescription.audio) {
         let item = VoiceAttestation(
-            id: UUID(), duration: duration, contentHash: contentHash, createdAt: Date(),
+            id: UUID(), duration: duration, contentHash: contentHash, createdAt: Date(), citation: citation,
             status: .pending, txHash: nil, txHeight: nil, error: nil
         )
         items.insert(item, at: 0)
@@ -53,11 +76,11 @@ final class VoiceAttestationStore: ObservableObject {
         if items[idx].status == .submitted || items[idx].status == .submitting { return }
         let item = items[idx]
         update(id: id) { $0.status = .submitting; $0.error = nil }
-        AttestationActivityManager.shared.start(id: id.uuidString, kindLabel: "Voice memo (\(Int(item.duration))s)")
+        AttestationActivityManager.shared.start(id: id.uuidString, kindLabel: item.citation)
         do {
             let result = try await identity.submitDeclaration(
                 contentHash: item.contentHash, origin: AttestationOrigin.deviceAuthored.rawValue,
-                citation: "Voice memo (\(Int(item.duration))s)"
+                citation: item.citation
             )
             update(id: id) { $0.status = .submitted; $0.txHash = result.txHash; $0.txHeight = result.height; $0.error = nil }
             await AttestationActivityManager.shared.end(id: id.uuidString, status: .submitted, detail: "Confirmed on-chain")

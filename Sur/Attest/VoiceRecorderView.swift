@@ -112,6 +112,7 @@ struct VoiceRecorderView: View {
     @Environment(\.dismiss) private var dismiss
     @StateObject private var controller = VoiceRecorderController()
     @StateObject private var store = VoiceAttestationStore.shared
+    @State private var citation = ""
 
     var body: some View {
         NavigationStack {
@@ -142,6 +143,11 @@ struct VoiceRecorderView: View {
                 Spacer()
 
                 if controller.recordedURL != nil && !controller.isRecording {
+                    TextField(EventDescription.audio, text: $citation)
+                        .textFieldStyle(.roundedBorder)
+                        .textInputAutocapitalization(.never)
+                        .padding(.horizontal, 32)
+
                     HStack(spacing: 16) {
                         Button("Discard", role: .destructive) { controller.discard() }
                             .buttonStyle(.bordered)
@@ -190,7 +196,9 @@ struct VoiceRecorderView: View {
     private func submit() {
         guard let url = controller.recordedURL, let data = try? Data(contentsOf: url) else { return }
         let hash = Data(SHA256.hash(data: data))
-        store.enqueue(duration: controller.elapsed, contentHash: hash)
+        let trimmed = citation.trimmingCharacters(in: .whitespacesAndNewlines)
+        store.enqueue(duration: controller.elapsed, contentHash: hash,
+                      citation: trimmed.isEmpty ? EventDescription.audio : trimmed)
         try? FileManager.default.removeItem(at: url)
         dismiss()
     }

@@ -16,8 +16,11 @@ struct VoiceAttestationRow: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
                 Image(systemName: "waveform").foregroundColor(.secondary)
-                Text("Voice memo · \(Int(item.duration))s")
+                Text(item.citation).lineLimit(1)
             }
+            Text("\(Int(item.duration))s")
+                .font(.caption2)
+                .foregroundColor(.secondary)
             HStack(spacing: 8) {
                 statusBadge
                 Spacer()

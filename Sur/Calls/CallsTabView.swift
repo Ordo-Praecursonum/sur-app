@@ -52,11 +52,13 @@ struct CallsTabView: View {
             }
             .navigationTitle("Calls")
             .sheet(item: $pendingCall) { call in
-                CallMethodPicker(displayName: call.displayName, rawNumber: call.number) { method in
-                    CallInitiationCoordinator.initiateCall(displayName: call.displayName, rawNumber: call.number, method: method)
+                CallMethodPicker(displayName: call.displayName, rawNumber: call.number) { method, citation in
+                    CallInitiationCoordinator.initiateCall(
+                        displayName: call.displayName, rawNumber: call.number, method: method, citation: citation
+                    )
                     pendingCall = nil
                 }
-                .presentationDetents([.height(360)])
+                .presentationDetents([.height(420)])
             }
             .task { await callStore.submitPending() }
         }

@@ -36,10 +36,35 @@ struct CallAttestation: Codable, Identifiable, Equatable {
     let calleeNumberE164: String
     let method: CallMethod
     let createdAt: Date
+    var citation: String
     var status: Status
     var txHash: String?
     var txHeight: Int64?
     var error: String?
+
+    init(id: UUID, calleeDisplayName: String, calleeNumberE164: String, method: CallMethod, createdAt: Date,
+         citation: String, status: Status, txHash: String?, txHeight: Int64?, error: String?) {
+        self.id = id; self.calleeDisplayName = calleeDisplayName; self.calleeNumberE164 = calleeNumberE164
+        self.method = method; self.createdAt = createdAt; self.citation = citation
+        self.status = status; self.txHash = txHash; self.txHeight = txHeight; self.error = error
+    }
+
+    // Tolerant decoding so call attestations persisted before `citation`
+    // existed still load, falling back to the same default they were
+    // submitted with.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(UUID.self, forKey: .id)
+        calleeDisplayName = try c.decode(String.self, forKey: .calleeDisplayName)
+        calleeNumberE164 = try c.decode(String.self, forKey: .calleeNumberE164)
+        method = try c.decode(CallMethod.self, forKey: .method)
+        createdAt = try c.decode(Date.self, forKey: .createdAt)
+        citation = try c.decodeIfPresent(String.self, forKey: .citation) ?? EventDescription.call
+        status = try c.decode(Status.self, forKey: .status)
+        txHash = try c.decodeIfPresent(String.self, forKey: .txHash)
+        txHeight = try c.decodeIfPresent(Int64.self, forKey: .txHeight)
+        error = try c.decodeIfPresent(String.self, forKey: .error)
+    }
 }
 
 @MainActor
@@ -59,10 +84,12 @@ final class CallAttestationStore: ObservableObject {
     }
 
     @discardableResult
-    func enqueue(calleeDisplayName: String, calleeNumberE164: String, method: CallMethod) -> UUID {
+    func enqueue(calleeDisplayName: String, calleeNumberE164: String, method: CallMethod,
+                 citation: String = EventDescription.call) -> UUID {
         let item = CallAttestation(
             id: UUID(), calleeDisplayName: calleeDisplayName, calleeNumberE164: calleeNumberE164,
-            method: method, createdAt: Date(), status: .pending, txHash: nil, txHeight: nil, error: nil
+            method: method, createdAt: Date(), citation: citation,
+            status: .pending, txHash: nil, txHeight: nil, error: nil
         )
         items.insert(item, at: 0)
         persist()
@@ -82,7 +109,7 @@ final class CallAttestationStore: ObservableObject {
             let hash = Data(SHA256.hash(data: Data(canonical.utf8)))
             let result = try await identity.submitDeclaration(
                 contentHash: hash, origin: AttestationOrigin.deviceAuthored.rawValue,
-                citation: "Call initiated via \(item.method.displayName)"
+                citation: item.citation
             )
             update(id: id) { $0.status = .submitted; $0.txHash = result.txHash; $0.txHeight = result.height; $0.error = nil }
             await AttestationActivityManager.shared.end(id: id.uuidString, status: .submitted, detail: "Confirmed on-chain")
