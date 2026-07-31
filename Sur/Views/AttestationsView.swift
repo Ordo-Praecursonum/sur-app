@@ -2,64 +2,16 @@
 //  AttestationsView.swift
 //  Sur
 //
-//  Create human-typed content attestations and view their on-chain status.
-//  Typing is timed (inter-keystroke intervals feed the human-typing proof). Each
-//  attestation is proved + submitted to the Sur Chain; submission runs in the
-//  background and pending/failed items can be resubmitted manually.
+//  Was previously its own standalone screen (List + toolbar); superseded by
+//  AttestFeedView, which now owns the list and renders these same rows
+//  alongside keystroke/camera/file/voice/call attestations in one unified
+//  feed. What's left here — AttestationRow and ComposeAttestationView — are
+//  reused as-is from AttestFeedView/ComposeMenuView.
 //
 
 import SwiftUI
 
-struct AttestationsView: View {
-    @StateObject private var store = TextAttestationStore.shared
-    @StateObject private var identity = SurChainIdentityManager.shared
-    @State private var showCompose = false
-
-    var body: some View {
-        List {
-            if identity.registeredUsername == nil {
-                Section {
-                    Label("Register this device first (Account → Sur Chain) to attest content.",
-                          systemImage: "exclamationmark.triangle")
-                        .font(.footnote)
-                        .foregroundColor(.secondary)
-                }
-            }
-            if store.items.isEmpty {
-                Section {
-                    Text("No attestations yet. Tap + to attest something you typed.")
-                        .font(.footnote)
-                        .foregroundColor(.secondary)
-                }
-            }
-            ForEach(store.items) { item in
-                AttestationRow(item: item) {
-                    Task { await store.submit(id: item.id) }
-                }
-            }
-            .onDelete { idx in
-                idx.map { store.items[$0].id }.forEach { store.remove(id: $0) }
-            }
-        }
-        .navigationTitle("Attestations")
-        .toolbar {
-            ToolbarItem(placement: .navigationBarTrailing) {
-                Button { showCompose = true } label: { Image(systemName: "plus") }
-                    .disabled(identity.registeredUsername == nil)
-            }
-        }
-        .sheet(isPresented: $showCompose) {
-            ComposeAttestationView { text, origin, citation in
-                store.enqueue(text: text, ikiValues: [], humanScore: 0, keystrokeCount: 0,
-                              origin: origin, citation: citation)
-            }
-        }
-        // Background pass: try to land anything still pending/failed.
-        .task { await store.submitPending() }
-    }
-}
-
-private struct AttestationRow: View {
+struct AttestationRow: View {
     let item: AttestationItem
     let onSubmit: () -> Void
 
@@ -126,9 +78,9 @@ private struct AttestationRow: View {
 /// device-signed DECLARATION of a chosen origin — it never claims the content was
 /// human-typed (only the Sur Keyboard can prove that). The user picks the origin
 /// and, for copied/imported content, a citation.
-private struct ComposeAttestationView: View {
+struct ComposeAttestationView: View {
     @Environment(\.dismiss) private var dismiss
-    let onAttest: (_ text: String, _ origin: AttestationOrigin, _ citation: String?) -> Void
+    let onAttest: (_ text: String, _ origin: AttestationOrigin, _ citation: String) -> Void
 
     @State private var text = ""
     @State private var origin: AttestationOrigin = .deviceAuthored
@@ -140,11 +92,15 @@ private struct ComposeAttestationView: View {
         AttestationOrigin.allCases.filter { $0 != .humanKeyboard }
 
     private var canAttest: Bool {
-        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
-        if origin.needsCitation {
-            return !citation.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        }
-        return true
+        !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    /// What actually gets signed and submitted as the citation — the user's
+    /// own text if they typed one, otherwise the same default shown as the
+    /// field's placeholder (never blank on-chain).
+    private var resolvedCitation: String {
+        let trimmed = citation.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? EventDescription.placeholder(for: origin) : trimmed
     }
 
     var body: some View {
@@ -169,19 +125,18 @@ private struct ComposeAttestationView: View {
                     Text("\(text.count) characters. The text is hashed — only its hash goes on-chain.")
                 }
 
-                if origin.needsCitation {
-                    Section {
-                        TextField(origin == .externalSource ? "URL, book, author…" : "Source / note",
-                                  text: $citation)
-                            .textInputAutocapitalization(.never)
-                    } header: {
-                        Text("Citation")
-                    }
+                Section {
+                    TextField(EventDescription.placeholder(for: origin), text: $citation)
+                        .textInputAutocapitalization(.never)
+                } header: {
+                    Text("Description")
+                } footer: {
+                    Text("What this attestation records, shown on-chain. Leave blank to use \"\(EventDescription.placeholder(for: origin))\".")
                 }
 
                 Section {
                     Button {
-                        onAttest(text, origin, origin.needsCitation ? citation : nil)
+                        onAttest(text, origin, resolvedCitation)
                         dismiss()
                     } label: {
                         Text("Sign & submit")
@@ -205,8 +160,8 @@ private struct ComposeAttestationView: View {
         switch origin {
         case .deviceAuthored: return "Authored on this device, but typing is not verified (e.g. typed or pasted here, not on the Sur Keyboard)."
         case .aiGenerated:    return "You declare this content was generated by AI."
-        case .externalSource: return "Copied or quoted from another source — add a citation below."
-        case .imported:       return "Imported from a file or another origin — add a note below."
+        case .externalSource: return "Copied or quoted from another source — add a description below."
+        case .imported:       return "Imported from a file or another origin — add a description below."
         case .humanKeyboard:  return ""
         }
     }

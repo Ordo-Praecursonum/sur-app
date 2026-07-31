@@ -25,16 +25,13 @@ struct WelcomeView: View {
                 
                 // Logo and title
                 VStack(spacing: 24) {
-                    Image(systemName: "wallet.pass")
-                        .font(.system(size: 80))
-                        .foregroundStyle(
-                            LinearGradient(
-                                colors: [.orange, .red],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                        )
-                    
+                    Image("AppLogo")
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 88, height: 88)
+                        .clipShape(RoundedRectangle(cornerRadius: 20))
+                        .shadow(color: Theme.brandOrange.opacity(0.3), radius: 12, y: 6)
+
                     VStack(spacing: 8) {
                         Text("Sur Wallet")
                             .font(.largeTitle)

@@ -11,7 +11,13 @@ import SwiftUI
 class AppSettings: ObservableObject {
     static let shared = AppSettings()
     private let hapticFeedbackKey = "hapticFeedbackEnabled"
-    
+    /// Mirrors SurKeyboard/KeyboardTutorialOverlay's "Don't show this again"
+    /// checkbox. The overlay can only set this to true (it disappears once
+    /// dismissed, so it can't offer an "uncheck" control itself) — unchecking
+    /// happens here, via the "Show keyboard tutorial again" toggle in Settings.
+    private let keyboardTutorialDismissedKey = "keyboard.tutorial.dismissed"
+    private let surCamLogoWatermarkKey = "surcam.logoWatermarkEnabled"
+
     @Published var isHapticFeedbackEnabled: Bool {
         didSet {
             if let sharedDefaults = UserDefaults(suiteName: "group.com.ordo.sure.Sur") {
@@ -19,13 +25,43 @@ class AppSettings: ObservableObject {
             }
         }
     }
-    
-    init() {
-        if let sharedDefaults = UserDefaults(suiteName: "group.com.ordo.sure.Sur") {
-            self.isHapticFeedbackEnabled = sharedDefaults.object(forKey: hapticFeedbackKey) as? Bool ?? true
-        } else {
-            self.isHapticFeedbackEnabled = true
+
+    /// The QR-code proof sticker is always applied to Sur Cam photos — it's
+    /// how a photo's on-chain proof travels with the image itself, so it
+    /// isn't user-toggleable. The Sur logo watermark is purely cosmetic
+    /// branding, so unlike the QR sticker it CAN be turned off here.
+    @Published var surCamLogoWatermarkEnabled: Bool {
+        didSet {
+            if let sharedDefaults = UserDefaults(suiteName: "group.com.ordo.sure.Sur") {
+                sharedDefaults.set(surCamLogoWatermarkEnabled, forKey: surCamLogoWatermarkKey)
+            }
         }
+    }
+
+    @Published var keyboardTutorialDismissed: Bool {
+        didSet {
+            if let sharedDefaults = UserDefaults(suiteName: "group.com.ordo.sure.Sur") {
+                sharedDefaults.set(keyboardTutorialDismissed, forKey: keyboardTutorialDismissedKey)
+            }
+        }
+    }
+
+    /// Whether the keyboard extension has ever confirmed it has "Allow Full
+    /// Access" — set by SurKeyboard/KeyboardViewController.swift on launch
+    /// (see its `fullAccessKey`). Without it, keystroke sessions/proof links
+    /// can't be written to/read from the shared container. Best-effort,
+    /// write-once-true flag: it can confirm access was granted, but can't
+    /// detect it being revoked later (the keyboard only observes its own
+    /// `hasFullAccess` while it's running).
+    var hasConfirmedFullAccess: Bool {
+        UserDefaults(suiteName: "group.com.ordo.sure.Sur")?.bool(forKey: "keyboard.hasFullAccess") ?? false
+    }
+
+    init() {
+        let sharedDefaults = UserDefaults(suiteName: "group.com.ordo.sure.Sur")
+        self.isHapticFeedbackEnabled = sharedDefaults?.object(forKey: hapticFeedbackKey) as? Bool ?? true
+        self.keyboardTutorialDismissed = sharedDefaults?.object(forKey: keyboardTutorialDismissedKey) as? Bool ?? false
+        self.surCamLogoWatermarkEnabled = sharedDefaults?.object(forKey: surCamLogoWatermarkKey) as? Bool ?? true
     }
 }
 

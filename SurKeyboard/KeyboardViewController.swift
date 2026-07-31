@@ -26,29 +26,48 @@ enum ShiftState {
 class KeyboardSettings {
     static let shared = KeyboardSettings()
     private let hapticFeedbackKey = "hapticFeedbackEnabled"
-    
-    var isHapticFeedbackEnabled: Bool {
-        get {
-            if let sharedDefaults = UserDefaults(suiteName: "group.com.ordo.sure.Sur") {
-                return sharedDefaults.object(forKey: hapticFeedbackKey) as? Bool ?? true
-            }
-            return true
-        }
-        set {
-            if let sharedDefaults = UserDefaults(suiteName: "group.com.ordo.sure.Sur") {
-                sharedDefaults.set(newValue, forKey: hapticFeedbackKey)
-            }
-        }
+    private let autocorrectKey = "autocorrectEnabled"
+    private let predictiveTextKey = "predictiveTextEnabled"
+    private let doubleSpacePeriodKey = "doubleSpacePeriodEnabled"
+
+    private func flag(_ key: String, default defaultValue: Bool) -> Bool {
+        guard let sharedDefaults = UserDefaults(suiteName: "group.com.ordo.sure.Sur") else { return defaultValue }
+        return sharedDefaults.object(forKey: key) as? Bool ?? defaultValue
     }
-    
+
+    private func setFlag(_ key: String, _ value: Bool) {
+        UserDefaults(suiteName: "group.com.ordo.sure.Sur")?.set(value, forKey: key)
+    }
+
+    var isHapticFeedbackEnabled: Bool {
+        get { flag(hapticFeedbackKey, default: true) }
+        set { setFlag(hapticFeedbackKey, newValue) }
+    }
+
+    var isAutocorrectEnabled: Bool {
+        get { flag(autocorrectKey, default: true) }
+        set { setFlag(autocorrectKey, newValue) }
+    }
+
+    var isPredictiveTextEnabled: Bool {
+        get { flag(predictiveTextKey, default: true) }
+        set { setFlag(predictiveTextKey, newValue) }
+    }
+
+    var isDoubleSpacePeriodEnabled: Bool {
+        get { flag(doubleSpacePeriodKey, default: true) }
+        set { setFlag(doubleSpacePeriodKey, newValue) }
+    }
+
     private init() {}
 }
 
 // MARK: - Key Button
 class KeyButton: UIButton {
     var keyType: KeyType = .character("")
-    var popupView: UIView?
-    
+    private var popupView: UIView?
+    private var popupLabel: UILabel?
+
     enum KeyType {
         case character(String)
         case shift
@@ -61,8 +80,8 @@ class KeyButton: UIButton {
         case emoji
         case microphone
         case letters  // Return to letters from emoji mode
-        case check    // Check icon on hash bar
-        case copyHash // Copy hash button
+        case check     // Check icon on hash bar
+        case proofLink // Send the message + a link to its on-chain proof
     }
     
     override init(frame: CGRect) {
@@ -86,50 +105,79 @@ class KeyButton: UIButton {
         adjustsImageWhenHighlighted = false
     }
     
+    /// Shows the enlarged character preview above the key, creating the popup
+    /// view once and reusing it on every subsequent press of this SAME key
+    /// instance (e.g. a double letter). Building a fresh UIView + UILabel and
+    /// running Auto Layout on every single keystroke was measurable overhead —
+    /// on a 120Hz/ProMotion display the frame budget is ~8.3ms, so per-tap
+    /// allocation cost that's invisible at 60Hz shows up as dropped frames.
+    /// The button itself is recreated on every keyboard mode switch, so this
+    /// cache is automatically bounded to a single mode's lifetime — see
+    /// discardKeyPopup(), which must be called before that happens.
     func showKeyPopup(in containerView: UIView, isDarkMode: Bool) {
         guard case .character(let char) = keyType, !char.isEmpty else { return }
-        
-        removeKeyPopup()
-        
-        let popup = UIView()
+
+        let popup: UIView
+        let label: UILabel
+        if let existingPopup = popupView, let existingLabel = popupLabel {
+            popup = existingPopup
+            label = existingLabel
+        } else {
+            popup = UIView()
+            popup.layer.cornerRadius = 8
+            popup.layer.shadowColor = UIColor.black.cgColor
+            popup.layer.shadowOffset = CGSize(width: 0, height: 2)
+            popup.layer.shadowOpacity = 0.3
+            popup.layer.shadowRadius = 4
+            popup.clipsToBounds = false
+            popup.translatesAutoresizingMaskIntoConstraints = false
+            popup.isUserInteractionEnabled = false
+
+            label = UILabel()
+            label.font = UIFont.systemFont(ofSize: 36, weight: .regular)
+            label.textAlignment = .center
+            label.translatesAutoresizingMaskIntoConstraints = false
+            popup.addSubview(label)
+
+            containerView.addSubview(popup)
+
+            let buttonFrame = convert(bounds, to: containerView)
+            let popupWidth: CGFloat = max(bounds.width + 16, 48)
+            let popupHeight: CGFloat = 60
+            NSLayoutConstraint.activate([
+                popup.widthAnchor.constraint(equalToConstant: popupWidth),
+                popup.heightAnchor.constraint(equalToConstant: popupHeight),
+                popup.centerXAnchor.constraint(equalTo: containerView.leadingAnchor, constant: buttonFrame.midX),
+                popup.bottomAnchor.constraint(equalTo: containerView.topAnchor, constant: buttonFrame.minY - 4),
+                label.centerXAnchor.constraint(equalTo: popup.centerXAnchor),
+                label.centerYAnchor.constraint(equalTo: popup.centerYAnchor)
+            ])
+
+            popupView = popup
+            popupLabel = label
+        }
+
         popup.backgroundColor = isDarkMode ? UIColor(white: 0.4, alpha: 1.0) : .white
-        popup.layer.cornerRadius = 8
-        popup.layer.shadowColor = UIColor.black.cgColor
-        popup.layer.shadowOffset = CGSize(width: 0, height: 2)
-        popup.layer.shadowOpacity = 0.3
-        popup.layer.shadowRadius = 4
-        popup.clipsToBounds = false
-        
-        let label = UILabel()
         label.text = char.uppercased()
-        label.font = UIFont.systemFont(ofSize: 36, weight: .regular)
         label.textColor = isDarkMode ? .white : .black
-        label.textAlignment = .center
-        label.translatesAutoresizingMaskIntoConstraints = false
-        popup.addSubview(label)
-        
-        popup.translatesAutoresizingMaskIntoConstraints = false
-        containerView.addSubview(popup)
-        
-        let buttonFrame = convert(bounds, to: containerView)
-        let popupWidth: CGFloat = max(bounds.width + 16, 48)
-        let popupHeight: CGFloat = 60
-        
-        NSLayoutConstraint.activate([
-            popup.widthAnchor.constraint(equalToConstant: popupWidth),
-            popup.heightAnchor.constraint(equalToConstant: popupHeight),
-            popup.centerXAnchor.constraint(equalTo: containerView.leadingAnchor, constant: buttonFrame.midX),
-            popup.bottomAnchor.constraint(equalTo: containerView.topAnchor, constant: buttonFrame.minY - 4),
-            label.centerXAnchor.constraint(equalTo: popup.centerXAnchor),
-            label.centerYAnchor.constraint(equalTo: popup.centerYAnchor)
-        ])
-        
-        popupView = popup
+        popup.isHidden = false
+        containerView.bringSubviewToFront(popup)
     }
-    
+
+    /// Hides the popup (cheap) without tearing it down — showKeyPopup() will
+    /// reuse it next time this key is pressed.
     func removeKeyPopup() {
+        popupView?.isHidden = true
+    }
+
+    /// Hard-removes the cached popup. Must be called before this button is
+    /// discarded (e.g. on a keyboard mode rebuild) — the popup lives in the
+    /// keyboard's view (a sibling of this button, not a subview of it), so it
+    /// would otherwise be orphaned there instead of going away with the button.
+    func discardKeyPopup() {
         popupView?.removeFromSuperview()
         popupView = nil
+        popupLabel = nil
     }
     
     func animatePress() {
@@ -154,6 +202,21 @@ class KeyboardViewController: UIInputViewController {
     // attestation are queued for the host app to pick up.
     private static let appGroupID = "group.com.ordo.sure.Sur"
     private static let pendingAttestKey = "sur.attest.pendingSessionIds"
+    /// Best-effort marker the host app reads to know whether Full Access is
+    /// currently granted, so it can nudge the user instead of them discovering
+    /// it only after a session silently fails to save. Without Full Access this
+    /// extension can read the shared container but NOT write to it, so we can
+    /// only ever positively confirm "granted" here — if access is later
+    /// revoked, this stays stale at true until the extension is opened again
+    /// with access restored, which is an acceptable gap for a UX hint.
+    private static let fullAccessKey = "keyboard.hasFullAccess"
+    /// Set (from the "Don't show this again" checkbox) once the first-run
+    /// explainer has been dismissed. The app's Settings tab exposes a "Show
+    /// keyboard tutorial again" toggle bound to the same key — the overlay
+    /// itself can't offer an "uncheck" control since it disappears once
+    /// dismissed.
+    private static let tutorialDismissedKey = "keyboard.tutorial.dismissed"
+    private var tutorialOverlayView: KeyboardTutorialOverlay?
 
     // MARK: - Properties
     private var keyboardView: UIView!
@@ -172,6 +235,66 @@ class KeyboardViewController: UIInputViewController {
     // Keystroke logging
     private let keystrokeLogger = KeystrokeLogger.shared
     private var lastKeyPressLocation: CGPoint = .zero
+
+    // Predictive text / autocorrect (fully on-device via UITextChecker — no
+    // network, no Full Access needed).
+    private let textChecker = UITextChecker()
+    private var suggestionButtons: [UIButton] = []
+    /// The word just autocorrected, kept only long enough to offer "as typed" as
+    /// a tappable revert; cleared once the user moves past it.
+    private var lastAutocorrect: (typed: String, corrected: String)?
+
+    // Double-space-for-period
+    private var lastSpaceTapTime: Date?
+
+    // Auto-return-to-letters: typing one of autoReturnToLettersPunctuation from
+    // the numbers/symbols pad arms this; the next space consumes it, switches
+    // back to letters, and (for true sentence-enders) capitalizes the next
+    // letter. Cleared by any other key in between (see keyTapped).
+    private var pendingReturnToLettersAfterSpace = false
+    private var pendingCapitalizeAfterReturn = false
+    private static let autoReturnToLettersPunctuation: Set<String> = [".", ",", "!", "?", ";", ":"]
+    private static let autoCapitalizePunctuation: Set<String> = [".", "!", "?"]
+
+    // Shift: a second tap within this window while shift is already on engages
+    // caps lock (matches stock iOS); a slower second tap just toggles shift off.
+    private var lastShiftTapTime: Date?
+
+    // Delete key acceleration: char-by-char, then whole words after a hold.
+    private var deleteHoldStartTime: Date?
+    private static let deleteWordAccelerationDelay: TimeInterval = 1.5
+
+    // Long-press-for-accents (e.g. holding "e" for é è ê ë). Implemented on the
+    // key button's existing UIControl touch events (touchDown / touchDragInside
+    // / touchDragOutside / touchUp*) rather than a separate gesture recognizer,
+    // so it can never double-fire alongside normal tap handling.
+    private var longPressTimer: Timer?
+    private var accentPopupKey: KeyButton?
+    private var accentPopupView: UIView?
+    private var accentPopupSegments: [(frame: CGRect, char: String)] = []
+    private var accentPopupSelectedIndex: Int = 0
+    private static let longPressDuration: TimeInterval = 0.35
+    private let accentVariants: [String: [String]] = [
+        "a": ["a", "à", "á", "â", "ä", "æ", "ã", "å", "ā"],
+        "e": ["e", "è", "é", "ê", "ë", "ē", "ė", "ę"],
+        "i": ["i", "ì", "í", "î", "ï", "ī", "į"],
+        "o": ["o", "ò", "ó", "ô", "ö", "õ", "ø", "ō", "œ"],
+        "u": ["u", "ù", "ú", "û", "ü", "ū"],
+        "y": ["y", "ý", "ÿ"],
+        "c": ["c", "ç", "ć", "č"],
+        "n": ["n", "ñ", "ń"],
+        "s": ["s", "ß", "ś", "š"],
+        "z": ["z", "ź", "ž", "ż"],
+        "g": ["g", "ğ"],
+        "l": ["l", "ł"],
+        "r": ["r", "ř"],
+        "t": ["t", "ť"],
+        "d": ["d", "đ"],
+    ]
+
+    /// Cache so the layout pass (fired often) can skip re-styling every key when
+    /// nothing about the appearance actually changed.
+    private var cachedIsDarkMode: Bool?
     
     private let letterRows = [
         ["q", "w", "e", "r", "t", "y", "u", "i", "o", "p"],
@@ -288,6 +411,9 @@ class KeyboardViewController: UIInputViewController {
     private func triggerHapticFeedback() {
         guard KeyboardSettings.shared.isHapticFeedbackEnabled else { return }
         feedbackGenerator?.impactOccurred()
+        // Re-prime immediately so the Taptic Engine is ready for the next tap —
+        // without this, consecutive fast taps after the first can feel delayed.
+        feedbackGenerator?.prepare()
     }
     
     // MARK: - Lifecycle
@@ -298,13 +424,59 @@ class KeyboardViewController: UIInputViewController {
         feedbackGenerator = UIImpactFeedbackGenerator(style: .light)
         feedbackGenerator?.prepare()
 
+        // Record Full Access status for the host app to read (see fullAccessKey
+        // doc comment) — this only ever writes `true`, since without access the
+        // write itself would silently fail anyway. Off-main: the FIRST access to
+        // the shared UserDefaults in this process loads its entire plist
+        // synchronously, and on a device that hasn't run the legacy-blob
+        // migration yet that plist can still be megabytes.
+        if hasFullAccess {
+            DispatchQueue.global(qos: .utility).async {
+                UserDefaults(suiteName: Self.appGroupID)?.set(true, forKey: Self.fullAccessKey)
+            }
+        }
+
         setupKeyboardView()
         KBLog.lifecycle.log("KeyboardViewController viewDidLoad: setup complete")
+
+        // First-run explainer — dispatched async, after the keyboard's own
+        // UI has been built above, so it never delays first-frame render
+        // (see the documented multi-second startup-freeze incident this
+        // extension's storage rewrite fixed).
+        DispatchQueue.main.async { [weak self] in
+            self?.showTutorialOverlayIfNeeded()
+        }
+    }
+
+    private func showTutorialOverlayIfNeeded() {
+        let dismissed = UserDefaults(suiteName: Self.appGroupID)?.bool(forKey: Self.tutorialDismissedKey) ?? false
+        guard !dismissed else { return }
+        let overlay = KeyboardTutorialOverlay { [weak self] dontShowAgain in
+            if dontShowAgain {
+                UserDefaults(suiteName: Self.appGroupID)?.set(true, forKey: Self.tutorialDismissedKey)
+            }
+            self?.tutorialOverlayView?.removeFromSuperview()
+            self?.tutorialOverlayView = nil
+        }
+        overlay.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(overlay)
+        NSLayoutConstraint.activate([
+            overlay.topAnchor.constraint(equalTo: view.topAnchor),
+            overlay.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            overlay.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            overlay.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+        ])
+        tutorialOverlayView = overlay
     }
     
     override func viewWillLayoutSubviews() {
         super.viewWillLayoutSubviews()
-        updateColors()
+        // viewWillLayoutSubviews fires on every layout pass (which can be
+        // frequent). Skip the full re-style of every key when appearance hasn't
+        // actually changed since last time.
+        if cachedIsDarkMode != isDarkMode {
+            updateColors()
+        }
     }
     
     override func viewDidLayoutSubviews() {
@@ -321,8 +493,14 @@ class KeyboardViewController: UIInputViewController {
     }
     
     override func textDidChange(_ textInput: UITextInput?) {
-        updateColors()
+        // This fires after every single keystroke, so — same as
+        // viewWillLayoutSubviews — skip the full key re-style when appearance
+        // hasn't actually changed.
+        if cachedIsDarkMode != isDarkMode {
+            updateColors()
+        }
         updateShiftStateAfterTextChange()
+        updateSuggestions()
     }
     
     override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
@@ -364,23 +542,27 @@ class KeyboardViewController: UIInputViewController {
         suggestionsView = UIView()
         suggestionsView.translatesAutoresizingMaskIntoConstraints = false
         keyboardView.addSubview(suggestionsView)
-        
-        let suggestions = ["\"The\"", "the", "to"]
+
         let stackView = UIStackView()
         stackView.axis = .horizontal
         stackView.distribution = .fillEqually
         stackView.spacing = 4
         stackView.translatesAutoresizingMaskIntoConstraints = false
         suggestionsView.addSubview(stackView)
-        
-        for suggestion in suggestions {
+
+        // Three reusable slots, populated live by updateSuggestions() from
+        // on-device UITextChecker completions/corrections — not static filler.
+        suggestionButtons = (0..<3).map { _ in
             let button = UIButton(type: .system)
-            button.setTitle(suggestion, for: .normal)
             button.titleLabel?.font = UIFont.systemFont(ofSize: 16)
+            button.titleLabel?.adjustsFontSizeToFitWidth = true
+            button.titleLabel?.lineBreakMode = .byTruncatingTail
+            button.isHidden = true
             button.addTarget(self, action: #selector(suggestionTapped(_:)), for: .touchUpInside)
             stackView.addArrangedSubview(button)
+            return button
         }
-        
+
         NSLayoutConstraint.activate([
             suggestionsView.topAnchor.constraint(equalTo: keyboardView.topAnchor),
             suggestionsView.leadingAnchor.constraint(equalTo: keyboardView.leadingAnchor),
@@ -575,10 +757,11 @@ class KeyboardViewController: UIInputViewController {
         hashLabel.translatesAutoresizingMaskIntoConstraints = false
         hashBar.addSubview(hashLabel)
         
-        // Copy button (copies the hash)
+        // Proof-link button: sends the drafted message, then a second message
+        // with the shareable link to its on-chain proof.
         let copyButton = KeyButton()
-        copyButton.keyType = .copyHash
-        copyButton.setImage(UIImage(systemName: "doc.on.doc"), for: .normal)
+        copyButton.keyType = .proofLink
+        copyButton.setImage(UIImage(systemName: "link"), for: .normal)
         copyButton.translatesAutoresizingMaskIntoConstraints = false
         copyButton.addTarget(self, action: #selector(keyTouchDown(_:)), for: .touchDown)
         copyButton.addTarget(self, action: #selector(keyTapped(_:)), for: .touchUpInside)
@@ -619,10 +802,13 @@ class KeyboardViewController: UIInputViewController {
         keyButton.addTarget(self, action: #selector(keyTouchDown(_:)), for: .touchDown)
         keyButton.addTarget(self, action: #selector(keyTapped(_:)), for: .touchUpInside)
         keyButton.addTarget(self, action: #selector(keyTouchUp(_:)), for: [.touchUpOutside, .touchCancel])
-        
+        // Tracks the finger sliding across an open accent popup (see
+        // scheduleLongPress/showAccentPopup). No-ops when no popup is open.
+        keyButton.addTarget(self, action: #selector(keyDragged(_:forEvent:)), for: [.touchDragInside, .touchDragOutside])
+
         return keyButton
     }
-    
+
     private func createSpecialKey(type: KeyButton.KeyType, width: CGFloat) -> KeyButton {
         let keyButton = KeyButton()
         keyButton.keyType = type
@@ -664,60 +850,182 @@ class KeyboardViewController: UIInputViewController {
     @objc private func keyTouchDown(_ sender: KeyButton) {
         sender.animatePress()
         triggerHapticFeedback()
-        
+
         // Capture the key press location for keystroke logging
         let buttonFrame = sender.convert(sender.bounds, to: keyboardView)
         lastKeyPressLocation = CGPoint(x: buttonFrame.midX, y: buttonFrame.midY)
-        
+
         // Show popup for character keys
         if case .character = sender.keyType {
             sender.showKeyPopup(in: keyboardView, isDarkMode: isDarkMode)
+            scheduleLongPress(for: sender)
         }
-        
+
         // Start delete repeat timer for delete key
         if case .delete = sender.keyType {
             startDeleteTimer()
         }
     }
-    
+
     @objc private func keyTouchUp(_ sender: KeyButton) {
+        longPressTimer?.invalidate()
+        longPressTimer = nil
+
+        // Character keys route touchUpOutside/touchCancel here (touchUpInside
+        // goes to keyTapped instead — see createCharacterKey). Releasing outside
+        // the button is exactly what happens when the finger slid across an open
+        // accent popup to pick a variant, so this is where that commits.
+        if accentPopupKey === sender {
+            commitAccentSelection()
+            sender.animateRelease()
+            return
+        }
+
         sender.animateRelease()
         sender.removeKeyPopup()
-        
+
         // Stop delete timer
         if case .delete = sender.keyType {
             stopDeleteTimer()
         }
+    }
+
+    /// Arms a timer that opens the accent-variant popup if the character key is
+    /// still being held when it fires. Uses the key's existing touch tracking
+    /// (touchDown/touchDrag*/touchUp*) rather than a separate gesture recognizer,
+    /// so there's no risk of it double-firing alongside normal tap handling —
+    /// releasing before the timer fires cancels it and behaves exactly as today.
+    private func scheduleLongPress(for key: KeyButton) {
+        longPressTimer?.invalidate()
+        guard case .character(let char) = key.keyType,
+              let variants = accentVariants[char.lowercased()],
+              variants.count > 1 else { return }
+        longPressTimer = Timer.scheduledTimer(withTimeInterval: Self.longPressDuration, repeats: false) { [weak self, weak key] _ in
+            guard let self, let key else { return }
+            key.removeKeyPopup()
+            self.showAccentPopup(for: key, variants: variants)
+        }
+    }
+
+    /// Tracks the finger sliding across an open accent popup and highlights
+    /// whichever variant is currently under it.
+    @objc private func keyDragged(_ sender: KeyButton, forEvent event: UIEvent) {
+        guard accentPopupKey === sender,
+              let touch = event.allTouches?.first else { return }
+        updateAccentPopupSelection(location: touch.location(in: keyboardView))
     }
     
     // MARK: - Delete Key Repeat
     private func startDeleteTimer() {
         // Stop any existing timer
         stopDeleteTimer()
-        
+        deleteHoldStartTime = Date()
+
         // Start with initial delay before repeating
         deleteTimer = Timer.scheduledTimer(withTimeInterval: 0.4, repeats: false) { [weak self] _ in
             self?.startFastDeleteTimer()
         }
     }
-    
+
     private func startFastDeleteTimer() {
-        // Start rapid deletion
+        // Rapid single-character deletion. deleteBackward() triggers
+        // textDidChange, which already calls updateSuggestions() — no need to
+        // call it again here.
         deleteTimer = Timer.scheduledTimer(withTimeInterval: 0.08, repeats: true) { [weak self] _ in
-            self?.textDocumentProxy.deleteBackward()
-            self?.triggerHapticFeedback()
+            guard let self else { return }
+            self.textDocumentProxy.deleteBackward()
+            self.logKeystroke(key: "delete")
+            self.triggerHapticFeedback()
+            self.updateHashDisplay()
+            // Escalate to whole-word deletion after a long hold, like iOS/SwiftKey.
+            if let start = self.deleteHoldStartTime,
+               Date().timeIntervalSince(start) > Self.deleteWordAccelerationDelay {
+                self.startWordDeleteTimer()
+            }
         }
     }
-    
+
+    private func startWordDeleteTimer() {
+        deleteTimer?.invalidate()
+        deleteTimer = Timer.scheduledTimer(withTimeInterval: 0.2, repeats: true) { [weak self] _ in
+            guard let self else { return }
+            self.deleteWordBackward()
+            self.triggerHapticFeedback()
+            self.updateHashDisplay()
+        }
+    }
+
+    /// Deletes back through the current word and any trailing whitespace before
+    /// it, in one go. Logs one "delete" keystroke per character actually removed
+    /// (not one per word-chunk) so the attested typedText — which replays the
+    /// log one character at a time — still matches what's really on screen.
+    /// Consecutive deletes logged this way are excluded from the "too fast"
+    /// timing penalty in evaluateHumanTyping, since a burst of near-simultaneous
+    /// deletes is expected here, not evidence of non-human typing.
+    private func deleteWordBackward() {
+        guard let context = textDocumentProxy.documentContextBeforeInput, !context.isEmpty else {
+            textDocumentProxy.deleteBackward()
+            logKeystroke(key: "delete")
+            return
+        }
+        var chars = Array(context)
+        var charsToDelete = 0
+        while let last = chars.last, last.isWhitespace {
+            chars.removeLast(); charsToDelete += 1
+        }
+        while let last = chars.last, !last.isWhitespace {
+            chars.removeLast(); charsToDelete += 1
+        }
+        for _ in 0..<max(charsToDelete, 1) {
+            textDocumentProxy.deleteBackward()
+            logKeystroke(key: "delete")
+        }
+    }
+
     private func stopDeleteTimer() {
         deleteTimer?.invalidate()
         deleteTimer = nil
+        deleteHoldStartTime = nil
     }
     
     @objc private func keyTapped(_ sender: KeyButton) {
+        // This is the common path for a character key (touchUpInside only goes
+        // here, not to keyTouchUp — see createCharacterKey), so a normal quick
+        // tap must cancel the pending long-press timer itself; otherwise it
+        // would still fire ~0.35s later and pop up an accent strip for a key
+        // that's already been released and handled.
+        longPressTimer?.invalidate()
+        longPressTimer = nil
+
+        // Character keys route touchUpInside only here (see createCharacterKey),
+        // so this is where an accent popup resolved by a plain tap (no drag)
+        // commits.
+        if accentPopupKey === sender {
+            commitAccentSelection()
+            sender.animateRelease()
+            return
+        }
+
         sender.animateRelease()
         sender.removeKeyPopup()
-        
+
+        // The autocorrect "revert" bubble is only valid for the single tap
+        // right after the correction; anything else moves past it.
+        if case .space = sender.keyType {} else {
+            lastAutocorrect = nil
+        }
+
+        // "Return to letters after space" is armed by a qualifying punctuation
+        // character and consumed by the very next space (below). Any other key
+        // in between invalidates it — e.g. typing "3.14" shouldn't return to
+        // letters just because a "1" came after the ".".
+        switch sender.keyType {
+        case .space, .character: break
+        default:
+            pendingReturnToLettersAfterSpace = false
+            pendingCapitalizeAfterReturn = false
+        }
+
         switch sender.keyType {
         case .character(let char):
             let textToInsert: String
@@ -727,35 +1035,62 @@ class KeyboardViewController: UIInputViewController {
                 textToInsert = char
             }
             textDocumentProxy.insertText(textToInsert)
-            
+
             // Log the keystroke
             logKeystroke(key: textToInsert)
-            
+
+            // Typing a sentence/clause-ending mark from the numbers/symbols pad
+            // arms an auto-return to letters (with capitalization for true
+            // sentence-enders) on the next space; anything else typed here
+            // instead cancels it.
+            if currentMode != .letters, Self.autoReturnToLettersPunctuation.contains(char) {
+                pendingReturnToLettersAfterSpace = true
+                pendingCapitalizeAfterReturn = Self.autoCapitalizePunctuation.contains(char)
+            } else {
+                pendingReturnToLettersAfterSpace = false
+                pendingCapitalizeAfterReturn = false
+            }
+
             // Auto-disable shift after typing (unless caps lock)
             if shiftState == .on {
                 shiftState = .off
                 updateShiftKeyAppearance()
             }
-            
+
         case .shift:
             handleShiftTap()
             logKeystroke(key: "shift")
-            
+
         case .delete:
             stopDeleteTimer()
             textDocumentProxy.deleteBackward()
             logKeystroke(key: "delete")
-            
+
         case .numbers:
             toggleMode()
-            
+            // No text changed, so textDidChange won't fire on its own — refresh
+            // explicitly (currentMode governs whether the bar shows at all).
+            updateSuggestions()
+
         case .symbols:
             toggleSymbols()
-            
+            updateSuggestions()
+
         case .space:
-            textDocumentProxy.insertText(" ")
-            logKeystroke(key: "space")
-            
+            handleSpaceTap()
+            if pendingReturnToLettersAfterSpace {
+                pendingReturnToLettersAfterSpace = false
+                let shouldCapitalize = pendingCapitalizeAfterReturn
+                pendingCapitalizeAfterReturn = false
+                currentMode = .letters
+                rebuildKeyboardForMode(.letters)
+                if shouldCapitalize {
+                    shiftState = .on
+                    updateShiftKeyAppearance()
+                    updateKeyLabels()
+                }
+            }
+
         case .returnKey:
             textDocumentProxy.insertText("\n")
             logKeystroke(key: "return")
@@ -765,48 +1100,102 @@ class KeyboardViewController: UIInputViewController {
             break
             
         case .emoji:
-            // Show custom emoji picker
+            // Show custom emoji picker (no text change — refresh explicitly)
             showEmojiPicker()
-            
+            updateSuggestions()
+
         case .microphone:
             // Microphone functionality - requires additional permissions
             break
-            
+
         case .letters:
-            // Return to letters mode from emoji picker
+            // Return to letters mode from emoji picker (no text change — refresh
+            // explicitly)
             currentMode = .letters
             rebuildKeyboardForMode(.letters)
-            
+            updateSuggestions()
+
         case .check:
             // Finalize keystroke session and update hash display
             finalizeKeystrokeSession()
-            
-        case .copyHash:
-            // Copy the hash to clipboard
-            copyHashToClipboard()
+
+        case .proofLink:
+            // Send the drafted message, then a second message with its proof link
+            sendProofLink()
         }
-        
-        // Update hash display with current session info
+
+        // Cheap: reads a local Int, no IPC/dictionary work. Suggestions refresh
+        // via textDidChange for every case that actually mutates text (character/
+        // delete/space/return/suggestion-tap/autocorrect all funnel through
+        // insertText/deleteBackward, which triggers it automatically) — doing it
+        // again here for every key was doubling the per-keystroke cost.
         updateHashDisplay()
     }
     
     // MARK: - Keystroke Logging
-    
+
+    /// Main-thread mirror of the session's keystroke count. logKeystroke() is
+    /// always called synchronously on the same thread as every key tap, so this
+    /// stays exactly in sync with the logger — without it, showing the live count
+    /// after every key required a blocking `workQueue.sync` read on the main
+    /// thread, which is unnecessary latency on the single hottest path in the
+    /// keyboard (every keystroke).
+    private var localKeystrokeCount = 0
+
+    /// Temporary: persisted debug trail readable directly from the shared App
+    /// Group storage (no device log tooling needed) — remove once the
+    /// "keystroke logs never save" issue is confirmed fixed.
+    private func debugCheckpoint(_ label: String) {
+        guard let defaults = UserDefaults(suiteName: Self.appGroupID) else { return }
+        var trail = defaults.stringArray(forKey: "debug.checkpoints") ?? []
+        trail.append("\(Date()): [VC] \(label)")
+        if trail.count > 40 { trail = Array(trail.suffix(40)) }
+        defaults.set(trail, forKey: "debug.checkpoints")
+        defaults.synchronize()
+    }
+
     private func logKeystroke(key: String) {
         keystrokeLogger.recordKeystroke(
             key: key,
             xCoordinate: Double(lastKeyPressLocation.x),
             yCoordinate: Double(lastKeyPressLocation.y)
         )
+        localKeystrokeCount += 1
     }
-    
+
     private func finalizeKeystrokeSession() {
-        guard keystrokeLogger.currentSessionKeystrokeCount > 0 else {
+        debugCheckpoint("Check tapped: localKeystrokeCount = \(localKeystrokeCount)")
+        guard localKeystrokeCount > 0 else {
             // No keystrokes to finalize
             return
         }
-        
+
+        // Without Full Access, iOS denies this extension write access to the
+        // shared App Group container — per Apple's own docs, "when the user
+        // denies Open Access, the extension no longer has write access to the
+        // shared group." finalizeCurrentSession() would still return a session
+        // (hashing/proof generation don't need the container), so without this
+        // check we'd clear currentSession and show "Queued for attestation" for
+        // a session that was never actually persisted, silently losing it. Bail
+        // out here instead, before the session is discarded, so it's still
+        // sitting in the logger ready to save once access is granted.
+        guard hasFullAccess else {
+            // Same tap feedback as the success path (haptic + color flash) —
+            // otherwise this branch is silent enough that a tap here reads as
+            // the check button simply not responding, when it's actually
+            // blocking on a real precondition the user can fix in Settings.
+            hashLabel?.text = "Enable Full Access to save logs"
+            let originalColor = hashLabel?.textColor
+            hashLabel?.textColor = .systemRed
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+                self?.hashLabel?.textColor = originalColor
+            }
+            triggerHapticFeedback()
+            return
+        }
+
         if let session = keystrokeLogger.finalizeCurrentSession() {
+            localKeystrokeCount = 0
             // Update hash label with finalized session hash
             hashLabel?.text = session.shortHash
 
@@ -839,65 +1228,433 @@ class KeyboardViewController: UIInputViewController {
             return
         }
         // Record the request so the app surfaces "pending" and attests on launch.
+        // synchronize() forces an immediate disk flush — see the detailed
+        // comment in KeystrokeLogger.saveSession(): iOS can reclaim this
+        // extension's process shortly after this function returns, before the
+        // normal deferred UserDefaults sync would otherwise happen.
         if let defaults = UserDefaults(suiteName: Self.appGroupID) {
             var pending = Set(defaults.stringArray(forKey: Self.pendingAttestKey) ?? [])
             pending.insert(session.sessionId)
             defaults.set(Array(pending), forKey: Self.pendingAttestKey)
+            defaults.synchronize()
         }
         hashLabel?.text = "Queued for attestation ✓"
         KBLog.signing.log("session \(session.sessionId, privacy: .public) queued for attestation (\(count) keystrokes)")
     }
     
     private func updateHashDisplay() {
-        // Show only the live keystroke COUNT here — cheap. Recomputing the full
-        // session hash on every keystroke is O(n) per key (O(n²) overall) and was a
-        // major source of typing lag. The real hash is shown on finalize and computed
-        // on demand when copying.
-        let count = keystrokeLogger.currentSessionKeystrokeCount
-        if count > 0 {
-            hashLabel?.text = "\(count) keystroke\(count == 1 ? "" : "s") logged"
+        // Show only the live keystroke COUNT here — cheap, and read from the
+        // main-thread-local counter (not the logger's queue) so this never blocks
+        // on background hashing work. The real hash is shown on finalize and
+        // computed on demand when copying.
+        if localKeystrokeCount > 0 {
+            hashLabel?.text = "\(localKeystrokeCount) keystroke\(localKeystrokeCount == 1 ? "" : "s") logged"
         }
     }
     
-    // MARK: - Copy Hash
-    private func copyHashToClipboard() {
-        // Copy the full hash, not the shortened display version
-        let fullHash: String
-        if keystrokeLogger.currentSessionKeystrokeCount > 0 {
-            fullHash = keystrokeLogger.currentSessionFullHash
-        } else if let lastHash = keystrokeLogger.lastFinalizedSessionFullHash {
-            fullHash = lastHash
-        } else {
-            fullHash = "0x0000000000000000000000000000000000000000000000000000000000000000"
+    // MARK: - Proof Link
+
+    /// Base URL of the public verifier. The content hash goes in `p`; the
+    /// device id (optional, user-controlled, see settings toggle) goes in `d`.
+    /// Two distinct paths, not just query params: the website statically
+    /// pre-renders a different link-preview card per path (dark when a
+    /// device id is included, light when it's a content-only check) — social
+    /// crawlers fetch raw HTML and can't branch on query strings, so which
+    /// card shows up has to be decided by the path alone.
+    private static let verifierBaseURLWithoutDevice = "https://surprotocol.org/v"
+    private static let verifierBaseURLWithDevice = "https://surprotocol.org/vd"
+    /// App-group flag set by the main app's settings screen: append `&d=<id>`
+    /// to shared proof links so the link asserts WHICH device typed it.
+    private static let includeDeviceIDKey = "sur.share.includeDeviceIDInLinks"
+    /// The registered device id, written by the main app (SurChainIdentityManager).
+    private static let deviceIDKey = "sur.identity.username.v1"
+
+    /// Builds the shareable proof link for a content hash, honoring the
+    /// "include device id" setting from the main app.
+    private func proofLink(forContentHash contentHash: String) -> String {
+        if let defaults = UserDefaults(suiteName: Self.appGroupID),
+           defaults.bool(forKey: Self.includeDeviceIDKey),
+           let deviceID = defaults.string(forKey: Self.deviceIDKey), !deviceID.isEmpty {
+            return "\(Self.verifierBaseURLWithDevice)?p=\(contentHash)&d=\(deviceID)"
         }
-        
-        UIPasteboard.general.string = fullHash
+        return "\(Self.verifierBaseURLWithoutDevice)?p=\(contentHash)"
+    }
+
+    /// Sends the drafted message, then a second message containing the link to
+    /// its on-chain proof. If a session is in progress it is finalized and
+    /// queued for attestation first (same path as the check button), so the
+    /// link points at the exact content that was just sent.
+    private func sendProofLink() {
+        var contentHash: String?
+
+        if localKeystrokeCount > 0 {
+            // Same Full Access precondition as the check button: without write
+            // access to the app group the session can't be persisted/attested,
+            // and a link to a proof that will never exist helps nobody.
+            guard hasFullAccess else {
+                hashLabel?.text = "Enable Full Access to share proofs"
+                let originalColor = hashLabel?.textColor
+                hashLabel?.textColor = .systemRed
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+                    self?.hashLabel?.textColor = originalColor
+                }
+                triggerHapticFeedback()
+                return
+            }
+            if let session = keystrokeLogger.finalizeCurrentSession() {
+                localKeystrokeCount = 0
+                contentHash = session.contentHash
+                attestFinalizedSession(session)
+            }
+        } else {
+            contentHash = keystrokeLogger.lastFinalizedSessionContentHash
+        }
+
+        guard let hash = contentHash else {
+            hashLabel?.text = "Type something first"
+            triggerHapticFeedback()
+            return
+        }
+
+        let link = proofLink(forContentHash: hash)
         triggerHapticFeedback()
-        
-        // Brief visual feedback - flash the label
-        let originalColor = hashLabel?.textColor
-        hashLabel?.textColor = .systemGreen
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
-            self?.hashLabel?.textColor = originalColor
+
+        // 1. Send the drafted message: a newline triggers send in apps whose
+        //    return key is "Send" (Messages, WhatsApp, …). 2. After a beat for
+        //    the host app to clear its field, insert a clear visual break —
+        //    two blank lines plus a short rule — then the link, so the proof
+        //    reads as distinctly separate from the message even in apps where
+        //    return is just a literal newline (Notes, Mail, a plain text
+        //    field, …) rather than "send" (there, everything lands in one
+        //    continuous block of text with no bubble boundary to lean on).
+        //    3. Send the link as its own message. None of this goes through
+        //    logKeystroke — it's generated, not typed, and must not pollute
+        //    the next session's keystroke log.
+        textDocumentProxy.insertText("\n")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
+            guard let self else { return }
+            self.textDocumentProxy.insertText("\n\n--------\n\(link)")
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
+                self?.textDocumentProxy.insertText("\n")
+                self?.hashLabel?.text = "Proof link sent ✓"
+            }
         }
     }
     
     @objc private func suggestionTapped(_ sender: UIButton) {
-        guard let text = sender.titleLabel?.text else { return }
-        let cleanText = text.replacingOccurrences(of: "\"", with: "")
-        
-        // Delete current word
-        while let context = textDocumentProxy.documentContextBeforeInput,
-              !context.isEmpty,
-              let lastChar = context.last,
-              !lastChar.isWhitespace {
-            textDocumentProxy.deleteBackward()
+        guard let title = sender.titleLabel?.text else { return }
+        let isQuoted = title.hasPrefix("\"") && title.hasSuffix("\"") && title.count >= 2
+        let cleanText = isQuoted ? String(title.dropFirst().dropLast()) : title
+
+        // Tapping the quoted "as typed" bubble right after an autocorrect
+        // reverts it, rather than being treated as completing the (empty) word
+        // that comes after the space which already followed the correction.
+        if let revert = lastAutocorrect, cleanText == revert.typed {
+            let toRemove = revert.corrected.count + 1 // + the space after it
+            for _ in 0..<toRemove {
+                textDocumentProxy.deleteBackward()
+                logKeystroke(key: "delete")
+            }
+            textDocumentProxy.insertText(revert.typed + " ")
+            logKeystroke(key: revert.typed)
+            logKeystroke(key: "space")
+            lastAutocorrect = nil
+            triggerHapticFeedback()
+            updateHashDisplay()
+            return
         }
-        
-        textDocumentProxy.insertText(cleanText + " ")
+
+        // Otherwise: replace the word currently being typed with the tapped
+        // suggestion. Each deletion/insertion is logged so the attested text
+        // matches what actually ends up on screen.
+        let originalWord = currentTypedWord()
+        for _ in 0..<originalWord.count {
+            textDocumentProxy.deleteBackward()
+            logKeystroke(key: "delete")
+        }
+        let matched = matchCase(of: originalWord, to: cleanText)
+        textDocumentProxy.insertText(matched + " ")
+        logKeystroke(key: matched)
+        logKeystroke(key: "space")
+
+        lastAutocorrect = nil
         triggerHapticFeedback()
+        updateHashDisplay()
     }
-    
+
+    // MARK: - Predictive Text & Autocorrect
+    //
+    // Entirely on-device via UITextChecker (Apple's built-in spell-checker) —
+    // no network calls, no Full Access entitlement needed, consistent with the
+    // rest of this extension's minimal-footprint design.
+
+    /// The word currently being typed: everything after the last whitespace/
+    /// newline before the cursor. Derived from the real document context each
+    /// time (rather than hand-tracked) so it can never drift out of sync with
+    /// what's actually on screen.
+    private func currentTypedWord() -> String {
+        guard let context = textDocumentProxy.documentContextBeforeInput else { return "" }
+        var chars: [Character] = []
+        for ch in context.reversed() {
+            if ch.isWhitespace || ch.isNewline { break }
+            chars.append(ch)
+        }
+        return String(chars.reversed())
+    }
+
+    /// Applies the original word's capitalization pattern to a replacement —
+    /// e.g. "Helllo" corrected to "hello" becomes "Hello"; "HELLO" stays
+    /// "HELLO".
+    private func matchCase(of original: String, to replacement: String) -> String {
+        if original.count > 1 && original == original.uppercased() {
+            return replacement.uppercased()
+        }
+        if let first = original.first, first.isUppercase {
+            return replacement.prefix(1).uppercased() + replacement.dropFirst()
+        }
+        return replacement
+    }
+
+    /// Live, per-keystroke suggestions. Deliberately uses ONLY the cheap
+    /// completions() prefix lookup — NOT rangeOfMisspelledWord()/guesses().
+    /// guesses() runs a real spell-correction search and is genuinely slow
+    /// (tens of ms); calling it here previously blocked the main thread on
+    /// nearly every keystroke, because almost every partial word-in-progress
+    /// ("k", "ke", "key" while typing "keyboard") registers as "misspelled"
+    /// until it's actually finished. That main-thread stall is what was
+    /// dropping keystrokes during fast typing — the run loop was busy
+    /// spell-checking an unfinished word instead of handling the next touch.
+    /// guesses() is still used, appropriately, once per completed word in
+    /// performAutocorrectIfNeeded().
+    private func updateSuggestions() {
+        guard currentMode == .letters, KeyboardSettings.shared.isPredictiveTextEnabled else {
+            setSuggestions([])
+            return
+        }
+
+        var slots: [String] = []
+        if let revert = lastAutocorrect {
+            slots.append("\"\(revert.typed)\"")
+        }
+
+        let word = currentTypedWord()
+        if !word.isEmpty {
+            let range = NSRange(location: 0, length: word.utf16.count)
+            let completions = textChecker.completions(forPartialWordRange: range, in: word, language: "en_US") ?? []
+
+            var seen = Set(slots.map { $0.lowercased() })
+            for candidate in completions {
+                let key = candidate.lowercased()
+                guard !seen.contains(key) else { continue }
+                seen.insert(key)
+                slots.append(candidate)
+                if slots.count >= 3 { break }
+            }
+            if slots.count < 3 && !seen.contains(word.lowercased()) {
+                slots.append("\"\(word)\"")
+            }
+        }
+
+        setSuggestions(Array(slots.prefix(3)))
+    }
+
+    private func setSuggestions(_ suggestions: [String]) {
+        for (index, button) in suggestionButtons.enumerated() {
+            if index < suggestions.count {
+                button.setTitle(suggestions[index], for: .normal)
+                button.isHidden = false
+            } else {
+                button.setTitle(nil, for: .normal)
+                button.isHidden = true
+            }
+        }
+    }
+
+    /// If the word just finished looks misspelled and autocorrect is enabled,
+    /// silently replaces it with UITextChecker's top guess — preserving the
+    /// original capitalization — and remembers it so the "as typed" bubble can
+    /// revert it. Each deletion/insertion is logged individually (not as one
+    /// aggregate event) so the attested text stays byte-accurate to what's on
+    /// screen; the resulting near-simultaneous "delete" timestamps are excluded
+    /// from the humanTypingScore's "too fast" penalty (see evaluateHumanTyping)
+    /// since this is a legitimate bulk correction, not fabricated typing rhythm.
+    private func performAutocorrectIfNeeded() {
+        // Disabled for now — pulled out of Keyboard Settings while it's
+        // unstable. Re-enable by restoring `KeyboardSettings.shared
+        // .isAutocorrectEnabled` here and the "Autocorrect" toggle in
+        // AccountView.swift's KeyboardSettingsView once it's solid again.
+        guard currentMode == .letters, false else { return }
+        let word = currentTypedWord()
+        guard word.count >= 2 else { return }
+
+        let range = NSRange(location: 0, length: word.utf16.count)
+        let misspelledRange = textChecker.rangeOfMisspelledWord(
+            in: word, range: range, startingAt: 0, wrap: false, language: "en_US"
+        )
+        guard misspelledRange.location != NSNotFound,
+              let guesses = textChecker.guesses(forWordRange: misspelledRange, in: word, language: "en_US"),
+              let topGuess = guesses.first,
+              topGuess.caseInsensitiveCompare(word) != .orderedSame else { return }
+
+        let corrected = matchCase(of: word, to: topGuess)
+
+        for _ in 0..<word.count {
+            textDocumentProxy.deleteBackward()
+            logKeystroke(key: "delete")
+        }
+        textDocumentProxy.insertText(corrected)
+        logKeystroke(key: corrected)
+
+        lastAutocorrect = (typed: word, corrected: corrected)
+    }
+
+    /// Handles the space key: runs autocorrect on the word just finished (if
+    /// enabled), then either inserts a normal space, or — on a quick second tap
+    /// — converts the double space into ". " with the next letter
+    /// auto-capitalized, matching stock iOS.
+    private func handleSpaceTap() {
+        performAutocorrectIfNeeded()
+
+        let context = textDocumentProxy.documentContextBeforeInput ?? ""
+        let now = Date()
+        let isDoubleSpaceShortcut = currentMode == .letters
+            && KeyboardSettings.shared.isDoubleSpacePeriodEnabled
+            && context.hasSuffix(" ")
+            && !context.hasSuffix("  ")
+            && (lastSpaceTapTime.map { now.timeIntervalSince($0) < 0.3 } ?? false)
+
+        if isDoubleSpaceShortcut {
+            textDocumentProxy.deleteBackward()
+            logKeystroke(key: "delete")
+            textDocumentProxy.insertText(". ")
+            logKeystroke(key: ".")
+            logKeystroke(key: "space")
+            shiftState = .on
+            updateShiftKeyAppearance()
+            updateKeyLabels()
+            lastSpaceTapTime = nil
+        } else {
+            textDocumentProxy.insertText(" ")
+            logKeystroke(key: "space")
+            lastSpaceTapTime = now
+        }
+    }
+
+    // MARK: - Accent Popup (long-press for é, è, ê…)
+
+    /// Shows a horizontal strip of accented variants above `key`. The base
+    /// character is always first, so a plain tap-and-release with no drag
+    /// (handled by keyTapped, since that's what fires for touchUpInside)
+    /// commits the same character a normal tap would have.
+    private func showAccentPopup(for key: KeyButton, variants: [String]) {
+        dismissAccentPopup()
+        accentPopupKey = key
+        accentPopupSelectedIndex = 0
+        triggerHapticFeedback()
+
+        let isShifted = shiftState != .off
+        let displayVariants = isShifted ? variants.map { $0.uppercased() } : variants
+
+        let segmentWidth: CGFloat = 40
+        let popupHeight: CGFloat = 48
+        let totalWidth = segmentWidth * CGFloat(variants.count)
+
+        let container = UIView()
+        container.backgroundColor = isDarkMode ? UIColor(white: 0.25, alpha: 1.0) : .white
+        container.layer.cornerRadius = 10
+        container.layer.shadowColor = UIColor.black.cgColor
+        container.layer.shadowOffset = CGSize(width: 0, height: 2)
+        container.layer.shadowOpacity = 0.3
+        container.layer.shadowRadius = 4
+        container.translatesAutoresizingMaskIntoConstraints = false
+        keyboardView.addSubview(container)
+
+        let buttonFrame = key.convert(key.bounds, to: keyboardView)
+        let keyboardWidth = max(keyboardView.bounds.width, totalWidth)
+        let halfWidth = totalWidth / 2
+        let clampedMidX = min(max(buttonFrame.midX, halfWidth + 4), keyboardWidth - halfWidth - 4)
+
+        NSLayoutConstraint.activate([
+            container.widthAnchor.constraint(equalToConstant: totalWidth),
+            container.heightAnchor.constraint(equalToConstant: popupHeight),
+            container.centerXAnchor.constraint(equalTo: keyboardView.leadingAnchor, constant: clampedMidX),
+            container.bottomAnchor.constraint(equalTo: keyboardView.topAnchor, constant: buttonFrame.minY - 4)
+        ])
+        accentPopupView = container
+        keyboardView.layoutIfNeeded()
+
+        var segments: [(frame: CGRect, char: String)] = []
+        let containerOrigin = container.frame.origin
+        for (index, variant) in displayVariants.enumerated() {
+            let label = UILabel(frame: CGRect(x: CGFloat(index) * segmentWidth, y: 0, width: segmentWidth, height: popupHeight))
+            label.text = variant
+            label.textAlignment = .center
+            label.font = UIFont.systemFont(ofSize: 22)
+            label.tag = index
+            container.addSubview(label)
+            segments.append((
+                frame: CGRect(x: containerOrigin.x + label.frame.minX, y: containerOrigin.y, width: segmentWidth, height: popupHeight),
+                char: variants[index]
+            ))
+        }
+        accentPopupSegments = segments
+        styleAccentPopupSelection()
+    }
+
+    private func styleAccentPopupSelection() {
+        guard let container = accentPopupView else { return }
+        for case let label as UILabel in container.subviews {
+            let selected = label.tag == accentPopupSelectedIndex
+            label.backgroundColor = selected ? .systemOrange : .clear
+            label.textColor = selected ? .white : (isDarkMode ? .white : .black)
+            label.layer.cornerRadius = 6
+            label.clipsToBounds = true
+        }
+    }
+
+    private func updateAccentPopupSelection(location: CGPoint) {
+        guard !accentPopupSegments.isEmpty else { return }
+        var closestIndex = 0
+        var closestDistance = CGFloat.greatestFiniteMagnitude
+        for (index, segment) in accentPopupSegments.enumerated() {
+            let distance = abs(location.x - segment.frame.midX)
+            if distance < closestDistance {
+                closestDistance = distance
+                closestIndex = index
+            }
+        }
+        if closestIndex != accentPopupSelectedIndex {
+            accentPopupSelectedIndex = closestIndex
+            styleAccentPopupSelection()
+            triggerHapticFeedback()
+        }
+    }
+
+    private func commitAccentSelection() {
+        defer { dismissAccentPopup() }
+        guard accentPopupSegments.indices.contains(accentPopupSelectedIndex) else { return }
+
+        var char = accentPopupSegments[accentPopupSelectedIndex].char
+        if shiftState != .off {
+            char = char.uppercased()
+        }
+        textDocumentProxy.insertText(char)
+        logKeystroke(key: char)
+        if shiftState == .on {
+            shiftState = .off
+            updateShiftKeyAppearance()
+        }
+        updateHashDisplay()
+    }
+
+    private func dismissAccentPopup() {
+        accentPopupView?.removeFromSuperview()
+        accentPopupView = nil
+        accentPopupKey = nil
+        accentPopupSegments = []
+        accentPopupSelectedIndex = 0
+    }
+
     // MARK: - Emoji Picker
     private func showEmojiPicker() {
         currentMode = .emojis
@@ -1057,14 +1814,19 @@ class KeyboardViewController: UIInputViewController {
     
     // MARK: - Mode Handling
     private func handleShiftTap() {
+        let now = Date()
+        // A quick second tap while shift is already on engages caps lock (matches
+        // stock iOS); a slower second tap just toggles shift back off.
+        let isQuickSecondTap = lastShiftTapTime.map { now.timeIntervalSince($0) < 0.4 } ?? false
         switch shiftState {
         case .off:
             shiftState = .on
         case .on:
-            shiftState = .capsLock
+            shiftState = isQuickSecondTap ? .capsLock : .off
         case .capsLock:
             shiftState = .off
         }
+        lastShiftTapTime = now
         updateShiftKeyAppearance()
         updateKeyLabels()
     }
@@ -1120,13 +1882,27 @@ class KeyboardViewController: UIInputViewController {
     }
     
     private func rebuildKeyboardForMode(_ mode: KeyboardMode) {
+        // Discard any in-flight long-press/accent-popup state — the buttons it
+        // references are about to be torn down.
+        longPressTimer?.invalidate()
+        longPressTimer = nil
+        dismissAccentPopup()
+
+        // Each key's press-popup lives in keyboardView (a sibling, not a
+        // subview, of the button) so it can float above the row — it must be
+        // torn down explicitly here, or it would be orphaned once these
+        // buttons are discarded below.
+        for button in keyButtons {
+            button.discardKeyPopup()
+        }
+
         // Remove existing key rows
         for stackView in rowStackViews {
             stackView.removeFromSuperview()
         }
         rowStackViews.removeAll()
         keyButtons.removeAll()
-        
+
         // Remove hash bar (will be recreated)
         hashBarView?.removeFromSuperview()
         hashBarView = nil
@@ -1318,6 +2094,7 @@ class KeyboardViewController: UIInputViewController {
     }
     
     private func updateColors() {
+        cachedIsDarkMode = isDarkMode
         let backgroundColor = isDarkMode ? UIColor(white: 0.15, alpha: 1.0) : UIColor(white: 0.85, alpha: 1.0)
         let keyBackgroundColor = isDarkMode ? UIColor(white: 0.35, alpha: 1.0) : .white
         let specialKeyBackgroundColor = isDarkMode ? UIColor(white: 0.25, alpha: 1.0) : UIColor(white: 0.85, alpha: 1.0)
@@ -1350,7 +2127,7 @@ class KeyboardViewController: UIInputViewController {
             case .returnKey:
                 button.backgroundColor = UIColor.systemOrange
                 button.tintColor = .white
-            case .globe, .emoji, .microphone, .check, .copyHash:
+            case .globe, .emoji, .microphone, .check, .proofLink:
                 button.backgroundColor = .clear
             }
         }

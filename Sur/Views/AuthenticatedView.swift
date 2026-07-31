@@ -39,7 +39,7 @@ struct AuthenticatedView: View {
                 
             case .authenticated:
                 // Fully authenticated - show main app
-                AccountView()
+                MainTabView()
                     .environmentObject(authManager)
                 
             case .error(let message):

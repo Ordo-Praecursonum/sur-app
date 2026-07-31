@@ -93,6 +93,31 @@ struct KBKeystrokeSession: Codable, Equatable {
         let suffix = String(hash.suffix(3))
         return "#\(prefix)...\(suffix)"
     }
+
+    /// The typed text replayed from the keystroke log, including deletions —
+    /// must produce the exact text that ends up attested on-chain (same replay
+    /// rules as the app-side KeystrokeSession.typedText).
+    var typedText: String {
+        var result = ""
+        for signedKeystroke in signedKeystrokes {
+            switch signedKeystroke.keystroke.key {
+            case "space": result.append(" ")
+            case "return", "enter": result.append("\n")
+            case "delete", "backspace":
+                if !result.isEmpty { result.removeLast() }
+            default: result.append(signedKeystroke.keystroke.key)
+            }
+        }
+        return result
+    }
+
+    /// The public lookup key for this session's attestation on Sur Chain:
+    /// 0x-prefixed SHA-256 of the typed text. This — not sessionHash — is what
+    /// the chain's VerifyContent endpoint and the explorer accept.
+    var contentHash: String {
+        let digest = SHA256.hash(data: Data(typedText.utf8))
+        return "0x" + digest.map { String(format: "%02x", $0) }.joined()
+    }
 }
 
 /// Non-interactive ZK Proof structure (SNARK-style)
@@ -187,11 +212,29 @@ final class KeystrokeLogger {
     private let workQueue = DispatchQueue(label: "com.ordo.sur.keyboard.keystrokeLogger", qos: .utility)
     
     // MARK: - Initialization
-    
+
     private init() {
-        KBLog.lifecycle.log("KeystrokeLogger init: loading keys from storage")
-        loadKeysFromStorage()
-        KBLog.lifecycle.log("KeystrokeLogger init: keys loaded (deviceKey: \(self.devicePrivateKey != nil), userKey: \(self.userPrivateKey != nil))")
+        // NOTHING heavy may run here: this singleton is touched during the
+        // keyboard view controller's init, on the main thread, while iOS is
+        // animating the keyboard in. Keychain reads and the one-time legacy
+        // storage migration happen on the serial work queue instead — every
+        // consumer of the keys already runs through that same queue, so
+        // ordering is guaranteed without blocking startup.
+        KBLog.lifecycle.log("KeystrokeLogger init: scheduling key load off-main")
+        workQueue.async { [weak self] in
+            guard let self else { return }
+            self.loadKeysFromStorage()
+            self.migrateLegacySessionsBlobIfNeeded()
+            KBLog.lifecycle.log("KeystrokeLogger init: keys loaded (deviceKey: \(self.devicePrivateKey != nil), userKey: \(self.userPrivateKey != nil))")
+        }
+    }
+
+    // Debug trail retired: it persisted a growing string array to the shared
+    // UserDefaults (with a forced synchronize) on every finalize step, which
+    // both leaked typing timestamps into the plist and contributed to plist
+    // bloat. Kept as a no-op so the call sites don't need touching.
+    private func debugCheckpoint(_ label: String) {
+        KBLog.signing.debug("\(label, privacy: .public)")
     }
     
     // MARK: - Key Management
@@ -302,27 +345,39 @@ final class KeystrokeLogger {
     }
     
     func finalizeCurrentSession() -> KBKeystrokeSession? {
+        debugCheckpoint("finalizeCurrentSession: called, currentSession is nil: \(currentSession == nil)")
         // Run on workQueue so we don't race the background keystroke appends, and so
         // any queued keystrokes are flushed before we snapshot the session.
         return workQueue.sync {
-            guard var session = currentSession else { return nil }
+            guard var session = currentSession else {
+                debugCheckpoint("finalizeCurrentSession: guard failed, currentSession was nil inside workQueue")
+                return nil
+            }
             KBLog.signing.log("finalizing session with \(session.signedKeystrokes.count) keystrokes")
+            debugCheckpoint("finalizeCurrentSession: session found, \(session.signedKeystrokes.count) keystrokes")
 
             session.endTimestamp = Int64(Date().timeIntervalSince1970 * 1000)
             _ = session.computeSessionHash()
+            debugCheckpoint("finalizeCurrentSession: hash computed")
             session.humanTypingScore = evaluateHumanTyping(session)
+            debugCheckpoint("finalizeCurrentSession: humanTypingScore = \(session.humanTypingScore ?? -1)")
             session.zkProof = generateZKProof(for: session)
+            debugCheckpoint("finalizeCurrentSession: zkProof generated: \(session.zkProof != nil)")
 
             // Sign the complete session bundle ONCE with the Secure Enclave key.
             if let sessionJSON = try? JSONEncoder().encode(session),
                let sessionSignature = signSessionBundle(sessionJSON) {
                 session.sessionSignature = sessionSignature.map { String(format: "%02x", $0) }.joined()
                 KBLog.signing.log("session bundle signed")
+                debugCheckpoint("finalizeCurrentSession: session bundle signed OK")
             } else {
                 KBLog.signing.error("session bundle signing failed (Secure Enclave key unavailable?)")
+                debugCheckpoint("finalizeCurrentSession: session bundle signing FAILED (continuing anyway)")
             }
 
+            debugCheckpoint("finalizeCurrentSession: about to call saveSession")
             saveSession(session)
+            debugCheckpoint("finalizeCurrentSession: saveSession returned, about to set currentSession=nil and return")
             currentSession = nil
             return session
         }
@@ -358,7 +413,21 @@ final class KeystrokeLogger {
     
     /// Get the most recent finalized session's full hash
     var lastFinalizedSessionFullHash: String? {
-        return loadAllSessions().first?.sessionHash
+        return newestFinalizedSession()?.sessionHash
+    }
+
+    /// Content hash (0x + SHA-256 of the typed text) of the in-progress session
+    /// — the chain's public lookup key, usable in the explorer's verifier.
+    var currentSessionContentHash: String? {
+        return workQueue.sync {
+            guard let session = currentSession, !session.signedKeystrokes.isEmpty else { return nil }
+            return session.contentHash
+        }
+    }
+
+    /// Content hash of the most recently finalized session.
+    var lastFinalizedSessionContentHash: String? {
+        return newestFinalizedSession()?.contentHash
     }
     
     // MARK: - Human Typing Evaluation
@@ -373,9 +442,14 @@ final class KeystrokeLogger {
         for i in 1..<keystrokes.count {
             let interval = Double(keystrokes[i].timestamp - keystrokes[i-1].timestamp)
             intervals.append(interval)
-            
-            // Penalize too fast typing (< 20ms)
-            if interval < 20 {
+
+            // Penalize too-fast typing (< 20ms) — except back-to-back deletes,
+            // which legitimately happen near-instantly during a bulk correction
+            // (holding delete, or accepting an autocorrect/suggestion that
+            // removes several characters at once). That burst reflects assisted
+            // editing, not a suspiciously fast typing rhythm.
+            let bothDeletes = keystrokes[i].key == "delete" && keystrokes[i - 1].key == "delete"
+            if interval < 20 && !bothDeletes {
                 score -= 10
             }
         }
@@ -496,28 +570,115 @@ final class KeystrokeLogger {
     }
     
     // MARK: - Storage
-    
-    private func saveSession(_ session: KBKeystrokeSession) {
-        guard let defaults = UserDefaults(suiteName: sharedSuiteName) else { return }
-        
-        var sessions = loadAllSessions()
-        sessions.insert(session, at: 0)
-        
-        if sessions.count > maxStoredSessions {
-            sessions = Array(sessions.prefix(maxStoredSessions))
-        }
-        
-        if let encoded = try? JSONEncoder().encode(sessions) {
-            defaults.set(encoded, forKey: sessionsKey)
-        }
+    //
+    // One JSON file per session in the App Group container
+    // (<container>/KeystrokeSessions/<zero-padded startTimestamp>-<id>.json).
+    //
+    // Sessions used to live as ONE JSON blob under a single UserDefaults key.
+    // With 50 stored sessions × hundreds of signed keystrokes each, that blob
+    // grew to multiple megabytes — and UserDefaults loads its ENTIRE plist
+    // synchronously on first access, which happens on the keyboard's main
+    // thread during startup. That one design choice was the multi-second
+    // keyboard launch freeze. Files fix both directions: startup no longer
+    // touches session data at all, and saving writes one ~50KB file (atomic,
+    // durable — no synchronize() dance) instead of re-encoding all 50.
+
+    private var sessionsDirectory: URL? {
+        guard let container = FileManager.default.containerURL(
+            forSecurityApplicationGroupIdentifier: sharedSuiteName
+        ) else { return nil }
+        let dir = container.appendingPathComponent("KeystrokeSessions", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir
     }
-    
-    func loadAllSessions() -> [KBKeystrokeSession] {
-        guard let defaults = UserDefaults(suiteName: sharedSuiteName),
-              let data = defaults.data(forKey: sessionsKey),
-              let sessions = try? JSONDecoder().decode([KBKeystrokeSession].self, from: data) else {
+
+    /// Zero-padded start timestamp prefix makes lexicographic order equal
+    /// chronological order, so "newest" never requires decoding anything.
+    private func sessionFileName(_ session: KBKeystrokeSession) -> String {
+        {
+        let ts = String(session.startTimestamp)
+        let padded = String(repeating: "0", count: max(0, 15 - ts.count)) + ts
+        return "\(padded)-\(session.sessionId).json"
+    }()
+    }
+
+    /// Sorted newest-first without reading file contents.
+    private func sessionFileURLsNewestFirst() -> [URL] {
+        guard let dir = sessionsDirectory,
+              let names = try? FileManager.default.contentsOfDirectory(atPath: dir.path) else {
             return []
         }
-        return sessions
+        return names
+            .filter { $0.hasSuffix(".json") }
+            .sorted(by: >)
+            .map { dir.appendingPathComponent($0) }
+    }
+
+    private func saveSession(_ session: KBKeystrokeSession) {
+        guard let dir = sessionsDirectory else {
+            KBLog.signing.error("saveSession: app group container unavailable — entitlement missing or misconfigured")
+            return
+        }
+        do {
+            let encoded = try JSONEncoder().encode(session)
+            let url = dir.appendingPathComponent(sessionFileName(session))
+            // .atomic writes to a temp file and renames — the file is either
+            // fully there or not at all, even if iOS reclaims the extension
+            // process right after. No UserDefaults synchronize() needed.
+            try encoded.write(to: url, options: .atomic)
+            KBLog.signing.log("saveSession: persisted \(encoded.count) bytes to \(url.lastPathComponent, privacy: .public)")
+        } catch {
+            KBLog.signing.error("saveSession: write failed: \(String(describing: error), privacy: .public) — session was NOT saved")
+            return
+        }
+
+        // Trim to the retention cap — file deletes, no re-encoding.
+        let urls = sessionFileURLsNewestFirst()
+        if urls.count > maxStoredSessions {
+            for url in urls.suffix(from: maxStoredSessions) {
+                try? FileManager.default.removeItem(at: url)
+            }
+        }
+    }
+
+    func loadAllSessions() -> [KBKeystrokeSession] {
+        let decoder = JSONDecoder()
+        return sessionFileURLsNewestFirst().compactMap { url in
+            guard let data = try? Data(contentsOf: url) else { return nil }
+            return try? decoder.decode(KBKeystrokeSession.self, from: data)
+        }
+    }
+
+    /// The most recent finalized session, decoding exactly one file.
+    func newestFinalizedSession() -> KBKeystrokeSession? {
+        guard let url = sessionFileURLsNewestFirst().first,
+              let data = try? Data(contentsOf: url) else { return nil }
+        return try? JSONDecoder().decode(KBKeystrokeSession.self, from: data)
+    }
+
+    /// One-time migration of the legacy single-blob storage. Decodes the old
+    /// UserDefaults value into per-session files, then deletes the key — which
+    /// permanently shrinks the shared plist back to a few hundred bytes (the
+    /// actual startup fix; the blob's mere existence made every first
+    /// UserDefaults access slow in BOTH the keyboard and the host app).
+    /// Idempotent, and also implemented app-side so whichever process runs
+    /// first after the update pays the one-time cost — preferably the app.
+    private func migrateLegacySessionsBlobIfNeeded() {
+        guard let defaults = UserDefaults(suiteName: sharedSuiteName) else { return }
+        // Retired debug trail (see debugCheckpoint) — clear its leftover array.
+        defaults.removeObject(forKey: "debug.checkpoints")
+        guard let data = defaults.data(forKey: sessionsKey) else { return }
+        KBLog.lifecycle.log("migrating legacy sessions blob (\(data.count) bytes) to per-session files")
+        if let sessions = try? JSONDecoder().decode([KBKeystrokeSession].self, from: data),
+           let dir = sessionsDirectory {
+            for session in sessions {
+                let url = dir.appendingPathComponent(sessionFileName(session))
+                guard !FileManager.default.fileExists(atPath: url.path),
+                      let encoded = try? JSONEncoder().encode(session) else { continue }
+                try? encoded.write(to: url, options: .atomic)
+            }
+        }
+        defaults.removeObject(forKey: sessionsKey)
+        defaults.synchronize()
     }
 }

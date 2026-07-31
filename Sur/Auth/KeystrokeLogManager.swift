@@ -44,9 +44,17 @@ public final class KeystrokeLogManager {
     private var devicePublicKey: String?
     
     // MARK: - Initialization
-    
+
     private init() {
         loadKeysFromStorage()
+        // Migrate the legacy single-blob session storage to per-session files
+        // in the background. Doing this in the HOST APP (not just the keyboard)
+        // matters: whichever process deletes the old multi-megabyte UserDefaults
+        // value fixes the slow first plist load for BOTH processes, and the app
+        // is usually launched before the keyboard after an update.
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            self?.migrateLegacySessionsBlobIfNeeded()
+        }
     }
     
     // MARK: - Key Management
@@ -221,57 +229,114 @@ public final class KeystrokeLogManager {
     }
     
     // MARK: - Storage
-    
-    /// Save a session to storage
-    private func saveSession(_ session: KeystrokeSession) {
-        guard let defaults = UserDefaults(suiteName: sharedSuiteName) else { return }
-        
-        var sessions = loadAllSessions()
-        sessions.insert(session, at: 0)
-        
-        // Trim to max stored sessions
-        if sessions.count > maxStoredSessions {
-            sessions = Array(sessions.prefix(maxStoredSessions))
-        }
-        
-        // Encode and save
-        if let encoded = try? JSONEncoder().encode(sessions) {
-            defaults.set(encoded, forKey: sessionsKey)
-        }
+    //
+    // One JSON file per session in the App Group container — shared with (and
+    // mirrored in) the keyboard extension's KeystrokeLogger. Sessions used to
+    // live as a single multi-megabyte JSON blob under one UserDefaults key,
+    // which made the FIRST UserDefaults access in every process load the whole
+    // plist synchronously — the root cause of the keyboard's multi-second
+    // startup freeze. Files also make cross-process reads trivially fresh (no
+    // synchronize() cache dance: a directory listing can't be stale the way a
+    // cached plist snapshot could).
+
+    private var sessionsDirectory: URL? {
+        guard let container = FileManager.default.containerURL(
+            forSecurityApplicationGroupIdentifier: sharedSuiteName
+        ) else { return nil }
+        let dir = container.appendingPathComponent("KeystrokeSessions", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir
     }
-    
-    /// Load all stored sessions
-    public func loadAllSessions() -> [KeystrokeSession] {
-        guard let defaults = UserDefaults(suiteName: sharedSuiteName),
-              let data = defaults.data(forKey: sessionsKey),
-              let sessions = try? JSONDecoder().decode([KeystrokeSession].self, from: data) else {
+
+    /// Zero-padded start timestamp prefix: lexicographic order == chronological.
+    /// MUST match the keyboard extension's sessionFileName exactly.
+    private func sessionFileName(_ session: KeystrokeSession) -> String {
+        {
+        let ts = String(session.startTimestamp)
+        let padded = String(repeating: "0", count: max(0, 15 - ts.count)) + ts
+        return "\(padded)-\(session.sessionId).json"
+    }()
+    }
+
+    private func sessionFileURLsNewestFirst() -> [URL] {
+        guard let dir = sessionsDirectory,
+              let names = try? FileManager.default.contentsOfDirectory(atPath: dir.path) else {
             return []
         }
-        return sessions
+        return names
+            .filter { $0.hasSuffix(".json") }
+            .sorted(by: >)
+            .map { dir.appendingPathComponent($0) }
     }
-    
+
+    /// Save a session to storage
+    private func saveSession(_ session: KeystrokeSession) {
+        guard let dir = sessionsDirectory,
+              let encoded = try? JSONEncoder().encode(session) else { return }
+        try? encoded.write(to: dir.appendingPathComponent(sessionFileName(session)), options: .atomic)
+
+        let urls = sessionFileURLsNewestFirst()
+        if urls.count > maxStoredSessions {
+            for url in urls.suffix(from: maxStoredSessions) {
+                try? FileManager.default.removeItem(at: url)
+            }
+        }
+    }
+
+    /// Load all stored sessions (newest first)
+    public func loadAllSessions() -> [KeystrokeSession] {
+        migrateLegacySessionsBlobIfNeeded()
+        let decoder = JSONDecoder()
+        return sessionFileURLsNewestFirst().compactMap { url in
+            guard let data = try? Data(contentsOf: url) else { return nil }
+            return try? decoder.decode(KeystrokeSession.self, from: data)
+        }
+    }
+
     /// Get a specific session by ID
     public func getSession(byId sessionId: String) -> KeystrokeSession? {
         return loadAllSessions().first { $0.sessionId == sessionId }
     }
-    
+
     /// Delete a session by ID
     public func deleteSession(byId sessionId: String) {
-        guard let defaults = UserDefaults(suiteName: sharedSuiteName) else { return }
-        
-        var sessions = loadAllSessions()
-        sessions.removeAll { $0.sessionId == sessionId }
-        
-        if let encoded = try? JSONEncoder().encode(sessions) {
-            defaults.set(encoded, forKey: sessionsKey)
+        for url in sessionFileURLsNewestFirst() where url.lastPathComponent.contains(sessionId) {
+            try? FileManager.default.removeItem(at: url)
         }
     }
-    
+
     /// Delete all sessions
     public func deleteAllSessions() {
-        guard let defaults = UserDefaults(suiteName: sharedSuiteName) else { return }
+        for url in sessionFileURLsNewestFirst() {
+            try? FileManager.default.removeItem(at: url)
+        }
+        // Also clear any not-yet-migrated legacy blob.
+        UserDefaults(suiteName: sharedSuiteName)?.removeObject(forKey: sessionsKey)
+    }
+
+    /// One-time, idempotent migration of the legacy single-blob storage into
+    /// per-session files; deletes the old key, permanently shrinking the shared
+    /// plist (the actual fix for slow first UserDefaults access in both the app
+    /// and the keyboard). Cheap no-op once migrated. Safe to call from any
+    /// thread; a lock guards concurrent callers within this process.
+    private func migrateLegacySessionsBlobIfNeeded() {
+        migrationLock.lock()
+        defer { migrationLock.unlock() }
+        guard let defaults = UserDefaults(suiteName: sharedSuiteName),
+              let data = defaults.data(forKey: sessionsKey) else { return }
+        if let sessions = try? JSONDecoder().decode([KeystrokeSession].self, from: data),
+           let dir = sessionsDirectory {
+            for session in sessions {
+                let url = dir.appendingPathComponent(sessionFileName(session))
+                guard !FileManager.default.fileExists(atPath: url.path),
+                      let encoded = try? JSONEncoder().encode(session) else { continue }
+                try? encoded.write(to: url, options: .atomic)
+            }
+        }
         defaults.removeObject(forKey: sessionsKey)
     }
+
+    private let migrationLock = NSLock()
     
     /// Get the most recent session
     public var mostRecentSession: KeystrokeSession? {
