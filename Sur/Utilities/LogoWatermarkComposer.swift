@@ -28,12 +28,12 @@ enum LogoWatermarkComposer {
             baseImage.draw(at: .zero)
 
             let shortSide = min(baseImage.size.width, baseImage.size.height)
-            let logoSide = shortSide * 0.16
+            let logoSide = shortSide * 0.08
             let padding = shortSide * 0.04
             let logoRect = CGRect(x: padding, y: baseImage.size.height - logoSide - padding,
                                    width: logoSide, height: logoSide)
 
-            logo.draw(in: logoRect, blendMode: .normal, alpha: 0.55)
+            logo.draw(in: logoRect, blendMode: .normal, alpha: 0.85)
         }
     }
 }
