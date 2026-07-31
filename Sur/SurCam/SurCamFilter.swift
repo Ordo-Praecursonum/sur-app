@@ -3,8 +3,8 @@
 //  Sur
 //
 //  A small curated filter list — no intensity sliders, no filter chains.
-//  Applied only to the captured still (see MediaCaptureProcessor); the
-//  live preview stays unfiltered with just a name label overlay.
+//  Chosen and applied post-capture, against the actual photo, in
+//  PhotoReviewView — never against the (unfiltered) live camera preview.
 //
 
 import CoreImage

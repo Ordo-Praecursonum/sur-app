@@ -4,14 +4,18 @@
 //
 //  Post-capture re-edit, reached from an already-attested Sur Cam photo in
 //  the Attest feed. This is the ONLY thing that creates a provenance
-//  (lineage) edge — picking a filter before the shutter is just part of the
-//  original capture. Re-fetches the original bytes from Photos (via the
-//  saved PHAsset localIdentifier), applies a new filter, submits a fresh
+//  (lineage) edge — picking a filter in PhotoReviewView right after the
+//  shutter is just part of the original capture. Re-fetches the original
+//  bytes from CapturedImageCache (this app's own sandboxed copy, NOT the
+//  Photos library — PHAsset/PHImageManager reads require
+//  NSPhotoLibraryUsageDescription, which this app deliberately doesn't
+//  declare since it only ever does add-only Photos saves; calling those
+//  APIs without it is an instant crash, which is exactly what used to
+//  happen when this screen opened), applies a new filter, submits a fresh
 //  attestation for the edited image, and links old→new via ProvenanceManager.
 //
 
 import SwiftUI
-import Photos
 import CoreImage
 import CryptoKit
 
@@ -36,7 +40,7 @@ struct EditCapturedPhotoView: View {
                             .clipShape(RoundedRectangle(cornerRadius: 12))
                             .padding(.horizontal)
                     } else if loadFailed {
-                        Text("Couldn't load the original photo from your library.")
+                        Text("Couldn't load the original photo. It may have been captured before this update and can't be re-edited.")
                             .font(.footnote)
                             .foregroundColor(.secondary)
                             .padding()
@@ -114,30 +118,11 @@ struct EditCapturedPhotoView: View {
     }
 
     private func loadSourceImage() {
-        guard let assetId = original.localAssetIdentifier else {
+        guard let image = CapturedImageCache.load(id: original.id) else {
             loadFailed = true
             return
         }
-        let assets = PHAsset.fetchAssets(withLocalIdentifiers: [assetId], options: nil)
-        guard let asset = assets.firstObject else {
-            loadFailed = true
-            return
-        }
-        let options = PHImageRequestOptions()
-        options.isSynchronous = false
-        options.deliveryMode = .highQualityFormat
-        options.isNetworkAccessAllowed = true
-        PHImageManager.default().requestImage(
-            for: asset, targetSize: PHImageManagerMaximumSize, contentMode: .aspectFit, options: options
-        ) { image, _ in
-            Task { @MainActor in
-                if let image {
-                    self.sourceImage = image
-                } else {
-                    self.loadFailed = true
-                }
-            }
-        }
+        sourceImage = image
     }
 
     private func submitEdit() async {

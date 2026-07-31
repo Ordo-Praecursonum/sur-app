@@ -3,14 +3,21 @@
 //  Sur
 //
 //  Sur Cam tab root — the app's home screen (Snapchat-style: camera first).
-//  Live preview, filter carousel (filter name label since preview itself
-//  stays unfiltered), Photo/Video mode toggle, QR/flash/flip controls, and
-//  a shutter button wired through MediaCaptureProcessor →
-//  CaptureAttestationCoordinator → CapturePreviewView. QR-sticker
-//  compositing and post-capture lineage edits land in the next step — the
-//  QR toggle exists in chrome already but doesn't do anything yet.
+//  Live preview, Photo/Video mode toggle, QR/flash/flip controls, a gallery
+//  thumbnail, and a shutter button.
+//
+//  Photo capture is two-phase: the shutter only captures + orients the raw
+//  image (MediaCaptureProcessor.decodeOrientedImage), then PhotoReviewView
+//  shows the actual photo so the user picks a filter against what they
+//  really shot — there's no filter picker here before the shutter, since
+//  the live preview stays unfiltered and picking blind against it was
+//  confusing (and easy to silently ignore once chosen). Once confirmed in
+//  review, the final render + hash + Photos save + chain submission all run
+//  in the background (finalizeAndAttestPhoto) so the camera is immediately
+//  ready for the next shot — nothing here blocks on attestation.
 //
 
+import CoreImage
 import SwiftUI
 
 enum SurCamMode: String, CaseIterable {
@@ -18,17 +25,21 @@ enum SurCamMode: String, CaseIterable {
     case video = "Video"
 }
 
+private struct PendingPhotoCapture: Identifiable {
+    let id = UUID()
+    let orientedImage: CIImage
+    let qrEnabled: Bool
+}
+
 struct SurCamView: View {
     @StateObject private var camera = CameraSessionManager()
-    @State private var selectedFilter: SurCamFilter = .none
     @State private var mode: SurCamMode = .photo
     @State private var qrEnabled = false
     @State private var isCapturing = false
     @State private var captureMessage: String?
-    @State private var previewImage: UIImage?
-    @State private var previewIsVideo = false
-    @State private var previewAttestationId: UUID?
-    @State private var showPreview = false
+    @State private var pendingPhoto: PendingPhotoCapture?
+    @State private var lastThumbnail: UIImage?
+    @State private var showGallery = false
 
     var body: some View {
         ZStack {
@@ -68,16 +79,33 @@ struct SurCamView: View {
                         .clipShape(Capsule())
                         .padding(.bottom, 8)
                 }
-                filterCarousel
                 modeAndShutter
             }
         }
-        .onAppear { camera.configureIfNeeded() }
-        .onDisappear { camera.stopSession() }
-        .fullScreenCover(isPresented: $showPreview) {
-            if let attestationId = previewAttestationId {
-                CapturePreviewView(image: previewImage, isVideo: previewIsVideo, attestationId: attestationId)
+        .onAppear {
+            camera.configureIfNeeded()
+            if lastThumbnail == nil,
+               let latestPhoto = CapturedMediaAttestationStore.shared.items.first(where: { $0.kind == .photo }) {
+                lastThumbnail = CapturedImageCache.load(id: latestPhoto.id)
             }
+        }
+        .onDisappear { camera.stopSession() }
+        .fullScreenCover(item: $pendingPhoto) { pending in
+            PhotoReviewView(orientedImage: pending.orientedImage) {
+                pendingPhoto = nil
+            } onUsePhoto: { filter, citation in
+                pendingPhoto = nil
+                captureMessage = "Saved. Attesting…"
+                Task {
+                    await finalizeAndAttestPhoto(
+                        orientedImage: pending.orientedImage, filter: filter,
+                        qrEnabled: pending.qrEnabled, citation: citation
+                    )
+                }
+            }
+        }
+        .sheet(isPresented: $showGallery) {
+            PhotoGalleryView()
         }
     }
 
@@ -135,29 +163,6 @@ struct SurCamView: View {
         .padding(.top, 8)
     }
 
-    private var filterCarousel: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 10) {
-                ForEach(SurCamFilter.allCases) { filter in
-                    Button {
-                        selectedFilter = filter
-                    } label: {
-                        Text(filter.displayName)
-                            .font(.caption)
-                            .fontWeight(selectedFilter == filter ? .semibold : .regular)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 6)
-                            .background(selectedFilter == filter ? Theme.brandOrange : .black.opacity(0.35))
-                            .foregroundColor(.white)
-                            .clipShape(Capsule())
-                    }
-                }
-            }
-            .padding(.horizontal)
-        }
-        .padding(.bottom, 8)
-    }
-
     private var modeAndShutter: some View {
         VStack(spacing: 16) {
             Picker("Mode", selection: $mode) {
@@ -169,9 +174,39 @@ struct SurCamView: View {
             .frame(width: 180)
             .colorScheme(.dark)
 
-            shutterButton
+            HStack {
+                galleryButton
+                Spacer()
+                shutterButton
+                Spacer()
+                Color.clear.frame(width: 44, height: 44)
+            }
+            .padding(.horizontal, 40)
         }
         .padding(.bottom, 24)
+    }
+
+    private var galleryButton: some View {
+        Button {
+            showGallery = true
+        } label: {
+            Group {
+                if let lastThumbnail {
+                    Image(uiImage: lastThumbnail)
+                        .resizable()
+                        .scaledToFill()
+                } else {
+                    Color.white.opacity(0.15)
+                        .overlay {
+                            Image(systemName: "photo.on.rectangle")
+                                .foregroundColor(.white)
+                        }
+                }
+            }
+            .frame(width: 44, height: 44)
+            .clipShape(RoundedRectangle(cornerRadius: 10))
+            .overlay(RoundedRectangle(cornerRadius: 10).stroke(.white, lineWidth: 1.5))
+        }
     }
 
     private var shutterButton: some View {
@@ -193,44 +228,66 @@ struct SurCamView: View {
 
     private func handleShutterTap() async {
         guard camera.availability == .ready else { return }
-        isCapturing = true
-        defer { isCapturing = false }
-        do {
-            switch mode {
-            case .photo:
+        switch mode {
+        case .photo:
+            isCapturing = true
+            defer { isCapturing = false }
+            do {
                 let data = try await camera.capturePhoto()
-                let processed = try MediaCaptureProcessor.processPhoto(rawData: data, filter: selectedFilter)
-                // Hash is computed above from the pre-sticker image — the QR
-                // (if enabled) is composited only into what gets saved/shown,
-                // never into what's hashed.
-                var finalImage = processed.finalImageForSaving
-                if qrEnabled {
-                    let link = ProofLink.build(contentHash: processed.contentHash)
-                    finalImage = QRStickerComposer.composite(baseImage: finalImage, link: link)
-                }
-                let id = await CaptureAttestationCoordinator.attestPhoto(processed, finalImage: finalImage, qrApplied: qrEnabled)
-                previewImage = finalImage
-                previewIsVideo = false
-                previewAttestationId = id
-                showPreview = true
+                let oriented = try MediaCaptureProcessor.decodeOrientedImage(rawData: data)
+                pendingPhoto = PendingPhotoCapture(orientedImage: oriented, qrEnabled: qrEnabled)
                 captureMessage = nil
-            case .video:
-                if camera.isRecordingVideo {
+            } catch {
+                captureMessage = "Capture failed: \(error.localizedDescription)"
+            }
+        case .video:
+            if camera.isRecordingVideo {
+                isCapturing = true
+                defer { isCapturing = false }
+                do {
                     let url = try await camera.stopRecordingVideo()
                     let processed = try MediaCaptureProcessor.processVideo(fileURL: url)
-                    let id = await CaptureAttestationCoordinator.attestVideo(processed)
-                    previewImage = nil
-                    previewIsVideo = true
-                    previewAttestationId = id
-                    showPreview = true
-                    captureMessage = nil
-                } else {
-                    _ = camera.startRecordingVideo()
+                    captureMessage = "Saved. Attesting…"
+                    Task { await attestVideoInBackground(processed) }
+                } catch {
+                    captureMessage = "Capture failed: \(error.localizedDescription)"
                 }
+            } else {
+                _ = camera.startRecordingVideo()
             }
-        } catch {
-            captureMessage = "Capture failed: \(error.localizedDescription)"
         }
+    }
+
+    /// Runs the full-res filter render off the main actor (real GPU/CPU
+    /// work — must never block the camera UI), then hops back for the
+    /// Photos save + chain submission. Called fire-and-forget from the
+    /// PhotoReviewView confirm handler, which has already dismissed back to
+    /// a live camera by the time this finishes.
+    private func finalizeAndAttestPhoto(orientedImage: CIImage, filter: SurCamFilter, qrEnabled: Bool, citation: String) async {
+        do {
+            let processed = try await Task.detached(priority: .userInitiated) {
+                try MediaCaptureProcessor.finalizePhoto(orientedImage: orientedImage, filter: filter)
+            }.value
+            var finalImage = processed.finalImageForSaving
+            if qrEnabled {
+                let link = ProofLink.build(contentHash: processed.contentHash)
+                finalImage = await Task.detached(priority: .userInitiated) {
+                    QRStickerComposer.composite(baseImage: processed.finalImageForSaving, link: link)
+                }.value
+            }
+            await CaptureAttestationCoordinator.attestPhoto(
+                processed, finalImage: finalImage, qrApplied: qrEnabled, citation: citation
+            )
+            lastThumbnail = processed.finalImageForSaving
+            if captureMessage == "Saved. Attesting…" { captureMessage = nil }
+        } catch {
+            captureMessage = "Attestation failed: \(error.localizedDescription)"
+        }
+    }
+
+    private func attestVideoInBackground(_ processed: ProcessedVideoCapture) async {
+        _ = await CaptureAttestationCoordinator.attestVideo(processed)
+        if captureMessage == "Saved. Attesting…" { captureMessage = nil }
     }
 
     private func emptyState(icon: String, title: String, subtitle: String, showSettingsButton: Bool = false) -> some View {

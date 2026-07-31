@@ -14,7 +14,7 @@ struct CapturedMediaAttestationRow: View {
     var onEdit: (() -> Void)?
 
     private var canEdit: Bool {
-        item.kind == .photo && item.status == .submitted && item.localAssetIdentifier != nil && onEdit != nil
+        item.kind == .photo && item.status == .submitted && CapturedImageCache.exists(id: item.id) && onEdit != nil
     }
 
     var body: some View {
@@ -22,7 +22,7 @@ struct CapturedMediaAttestationRow: View {
             HStack(spacing: 6) {
                 Image(systemName: item.kind == .photo ? "photo.fill" : "video.fill")
                     .foregroundColor(.secondary)
-                Text(item.kind == .photo ? "Sur Cam photo" : "Sur Cam video")
+                Text(item.citation).lineLimit(1)
                 if let filter = item.filterApplied {
                     Text("· \(filter.capitalized)")
                         .foregroundColor(.secondary)

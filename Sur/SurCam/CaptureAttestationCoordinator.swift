@@ -3,11 +3,12 @@
 //  Sur
 //
 //  Bridges a processed Sur Cam capture to the chain (via
-//  CapturedMediaAttestationStore) and to the Photos library. Saves are
-//  add-only (NSPhotoLibraryAddUsageDescription) — Sur never reads the
-//  existing library, only adds what it just captured. The saved asset's
-//  localIdentifier is kept on the attestation record so a later edit
-//  (EditCapturedPhotoView) can re-fetch the original image bytes.
+//  CapturedMediaAttestationStore), to the Photos library, and to this app's
+//  own CapturedImageCache. Photos saves are add-only
+//  (NSPhotoLibraryAddUsageDescription) — Sur never reads the existing
+//  library, only adds what it just captured; re-fetching bytes for a later
+//  edit (EditCapturedPhotoView) or the in-app gallery goes through
+//  CapturedImageCache instead, not PHAsset.
 //
 
 import Photos
@@ -19,27 +20,33 @@ enum CaptureAttestationCoordinator {
     /// QR-stickered image here when the QR toggle is on; `capture.contentHash`
     /// always stays the pre-sticker hash (computed by MediaCaptureProcessor).
     @discardableResult
-    static func attestPhoto(_ capture: ProcessedCapture, finalImage: UIImage, qrApplied: Bool) async -> UUID {
+    static func attestPhoto(_ capture: ProcessedCapture, finalImage: UIImage, qrApplied: Bool,
+                             citation: String = EventDescription.photo) async -> UUID {
         let assetId = await saveImageToPhotos(finalImage)
-        return CapturedMediaAttestationStore.shared.enqueue(
+        let id = CapturedMediaAttestationStore.shared.enqueue(
             kind: .photo,
             contentHash: capture.contentHash,
             filterApplied: capture.filterApplied == .none ? nil : capture.filterApplied.rawValue,
             qrApplied: qrApplied,
-            citation: "Sur Cam photo",
+            citation: citation,
             localAssetIdentifier: assetId
         )
+        // Cache the clean (pre-QR-sticker) image, not `finalImage` — editing
+        // should always re-filter from an un-stickered base, and a sticker
+        // baked into the gallery thumbnail would be redundant clutter.
+        CapturedImageCache.save(capture.finalImageForSaving, id: id)
+        return id
     }
 
     @discardableResult
-    static func attestVideo(_ capture: ProcessedVideoCapture) async -> UUID {
+    static func attestVideo(_ capture: ProcessedVideoCapture, citation: String = EventDescription.video) async -> UUID {
         let assetId = await saveVideoToPhotos(capture.fileURL)
         return CapturedMediaAttestationStore.shared.enqueue(
             kind: .video,
             contentHash: capture.contentHash,
             filterApplied: nil,
             qrApplied: false,
-            citation: "Sur Cam video",
+            citation: citation,
             localAssetIdentifier: assetId
         )
     }
